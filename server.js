@@ -345,7 +345,26 @@ app.post('/api/orders/create-ptero', (req, res) => {
   const user = db.users.find(u => u.id === userId);
   if (!user) return res.status(404).json({ success: false, message: 'User tidak ditemukan.' });
 
-  const pkg = (db.packages || []).find(p => p.id === packageId);
+  let pkg = (db.packages || []).find(p => p.id === packageId);
+  
+  // Dukungan untuk Paket Custom dari Slider Bar
+  if (!pkg && packageId.startsWith('custom-')) {
+    const parts = packageId.replace('custom-', '').split('-');
+    const ramGb = parseInt(parts[0]) || 2;
+    const cpuPct = parseInt(parts[1]) || 150;
+    const diskGb = ramGb * 2;
+    const calcPrice = Math.round((ramGb * 2000) + ((cpuPct / 100) * 1000) + ((diskGb / 2) * 500));
+
+    pkg = {
+      id: packageId,
+      name: `Custom Panel ${ramGb}GB (${cpuPct}% CPU)`,
+      ram: `${ramGb * 1024} MB (${ramGb}GB)`,
+      cpu: `${cpuPct}% CPU`,
+      disk: `${diskGb * 1024} MB (${diskGb}GB)`,
+      price: calcPrice
+    };
+  }
+
   if (!pkg) return res.status(404).json({ success: false, message: 'Paket panel tidak ditemukan!' });
 
   const rawPrice = pkg.price;

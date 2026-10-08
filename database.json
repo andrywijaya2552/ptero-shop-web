@@ -1,0 +1,231 @@
+{
+  "settings": {
+    "siteName": "NUSA PTERO STORE",
+    "siteTagline": "Penyedia Hosting & Server Panel Pterodactyl Termurah #1 di Indonesia",
+    "pteroDomain": "https://panel.contoh.com",
+    "pteroApiKey": "ptla_dummy_api_key_pterodactyl",
+    "contactWa": "6285812345678",
+    "announcementText": "🚀 SELAMAT DATANG DI NUSA PTERO STORE! Gunakan Kode Promo: PTERONEW untuk diskon 30%! Server aktif instan 24/7 dan bergaransi penuh."
+  },
+  "users": [
+    {
+      "id": "usr_admin",
+      "username": "admin",
+      "password": "admin123",
+      "fullName": "Super Administrator",
+      "role": "admin",
+      "balance": 9994000,
+      "createdAt": "2026-10-08T14:56:20.681Z"
+    },
+    {
+      "id": "usr_demo",
+      "username": "demo_user",
+      "password": "password123",
+      "fullName": "Demo Member",
+      "role": "member",
+      "balance": 50000,
+      "createdAt": "2026-10-08T14:56:20.681Z"
+    }
+  ],
+  "packages": [
+    {
+      "id": "ptero-1gb",
+      "name": "Panel Pterodactyl 1GB",
+      "ram": "1024 MB (1GB)",
+      "cpu": "100% CPU",
+      "disk": "2048 MB (2GB)",
+      "price": 3000,
+      "duration": "30 Hari",
+      "description": "Cocok untuk Bot WhatsApp NodeJS, Bot Discord ringan, atau script uptime mini.",
+      "features": [
+        "Node.js & Python Support",
+        "Anti-DDoS Protection",
+        "Uptime 99.9%",
+        "Full Root Access File"
+      ],
+      "isPopular": false
+    },
+    {
+      "id": "ptero-2gb",
+      "name": "Panel Pterodactyl 2GB",
+      "ram": "2048 MB (2GB)",
+      "cpu": "150% CPU",
+      "disk": "4096 MB (4GB)",
+      "price": 6000,
+      "duration": "30 Hari",
+      "description": "Paling laris! Sempurna untuk Bot WA Multi-Device, Web API, atau Minecraft Pocket Edition.",
+      "features": [
+        "Auto Backup Daily",
+        "High Performance CPU",
+        "Subdomain Gratis",
+        "Garansi 30 Hari"
+      ],
+      "isPopular": true
+    },
+    {
+      "id": "ptero-4gb",
+      "name": "Panel Pterodactyl 4GB",
+      "ram": "4096 MB (4GB)",
+      "cpu": "200% CPU",
+      "disk": "8192 MB (8GB)",
+      "price": 12000,
+      "duration": "30 Hari",
+      "description": "Performa tinggi untuk Server Game Minecraft Bedrock/Java, Bot WA traffic ramai, atau Web App.",
+      "features": [
+        "Multi Egg Support (Node, Py, Java, Go)",
+        "High Priority Bandwidth",
+        "Dedicated CPU Core",
+        "Instant Activation"
+      ],
+      "isPopular": false
+    },
+    {
+      "id": "ptero-8gb",
+      "name": "Panel Pterodactyl 8GB",
+      "ram": "8192 MB (8GB)",
+      "cpu": "300% CPU",
+      "disk": "15360 MB (15GB)",
+      "price": 24000,
+      "duration": "30 Hari",
+      "description": "Spesifikasi Monster untuk Server Minecraft Community, Multi-Bot Server, dan Hosting Database.",
+      "features": [
+        "Extreme Speed NVMe SSD",
+        "Unlimited Traffic / Port",
+        "Priority VIP Support",
+        "Refill / Re-install 1-Click"
+      ],
+      "isPopular": false
+    },
+    {
+      "id": "ptero-unlimited",
+      "name": "Panel Pterodactyl UNLIMITED",
+      "ram": "Unlimited RAM",
+      "cpu": "Unlimited CPU",
+      "disk": "Unlimited NVMe SSD",
+      "price": 45000,
+      "duration": "30 Hari",
+      "description": "Paket Ultimate tanpa batas kuota RAM, CPU & Disk untuk bisnis hosting atau proyek besar Anda.",
+      "features": [
+        "No Resource Throttling",
+        "Ultra Low Latency Node",
+        "Akses Admin Reseller (Opsional)",
+        "Full Garansi 30 Hari"
+      ],
+      "isPopular": true
+    }
+  ],
+  "payments": [
+    {
+      "id": "qris",
+      "name": "QRIS All Payment (Gopay / DANA / OVO / Shopee / BCA)",
+      "accountNumber": "SCAN QR OTOMATIS",
+      "accountName": "PTERO HOST DIGITAL",
+      "qrImage": "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=00020101021126570011ID.DANA.WWW01189360091800000000005204581253033605802ID5916PTEROHOST_DIG6007JAKARTA6304D12A",
+      "instruction": "Scan QRIS di atas melalui M-Banking atau E-Wallet apapun. Pastikan nominal transfer sesuai dengan total tiket deposit."
+    },
+    {
+      "id": "dana",
+      "name": "DANA E-Wallet",
+      "accountNumber": "085812345678",
+      "accountName": "Admin Ptero Official",
+      "qrImage": null,
+      "instruction": "Transfer ke nomor DANA di atas. Simpan bukti transfer untuk upload konfirmasi."
+    },
+    {
+      "id": "gopay",
+      "name": "GoPay E-Wallet",
+      "accountNumber": "085812345678",
+      "accountName": "Admin Ptero Official",
+      "qrImage": null,
+      "instruction": "Kirim saldo GoPay ke nomor di atas. Cantumkan username kamu jika memungkinkan."
+    },
+    {
+      "id": "bca",
+      "name": "Bank BCA",
+      "accountNumber": "8735019281",
+      "accountName": "PT PTERO HOSTING INDO",
+      "qrImage": null,
+      "instruction": "Transfer ke rekening BCA di atas lalu upload bukti struk transaksi."
+    }
+  ],
+  "orders": [
+    {
+      "id": "PTR-5213",
+      "userId": "usr_admin",
+      "username": "admin",
+      "packageId": "ptero-2gb",
+      "packageName": "Panel Pterodactyl 2GB",
+      "ram": "2048 MB (2GB)",
+      "cpu": "150% CPU",
+      "disk": "4096 MB (4GB)",
+      "eggType": "NodeJS (Bot WA, Discord & Web API)",
+      "serverName": "ABC",
+      "pteroUsername": "admin_y45hh",
+      "pteroPassword": "Ptero546106#",
+      "pteroLoginUrl": "https://panel.contoh.com",
+      "price": 6000,
+      "rawPrice": 6000,
+      "discount": 0,
+      "voucherCode": null,
+      "status": "Active",
+      "expiredAt": "2026-11-07T14:57:35.913Z",
+      "createdAt": "2026-10-08T14:57:35.913Z"
+    },
+    {
+      "id": "PTR-8812",
+      "userId": "usr_demo",
+      "username": "demo_user",
+      "packageId": "ptero-2gb",
+      "packageName": "Panel Pterodactyl 2GB",
+      "eggType": "NodeJS (Bot WA & Web API)",
+      "serverName": "Bot WA Store V2",
+      "pteroUsername": "demo_user_bot",
+      "pteroPassword": "Password123#",
+      "pteroLoginUrl": "https://panel.nanika.fahridev.my.id",
+      "price": 6000,
+      "discount": 0,
+      "status": "Active",
+      "expiredAt": "2026-11-07T14:56:20.681Z",
+      "createdAt": "2026-10-08T12:56:20.681Z"
+    }
+  ],
+  "topups": [
+    {
+      "id": "DEP-7001",
+      "userId": "usr_demo",
+      "username": "demo_user",
+      "paymentMethod": "QRIS All Payment",
+      "amount": 50000,
+      "uniqueCode": 154,
+      "totalPay": 50154,
+      "proofUrl": "",
+      "notes": "Deposit awal member demo",
+      "status": "Approved",
+      "createdAt": "2026-10-07T14:56:20.682Z",
+      "approvedAt": "2026-10-07T15:56:20.682Z"
+    }
+  ],
+  "vouchers": [
+    {
+      "code": "PTERONEW",
+      "type": "percent",
+      "discount": 30,
+      "maxDiscount": 10000,
+      "minOrder": 3000,
+      "usageLimit": 200,
+      "usedCount": 5,
+      "isActive": true
+    },
+    {
+      "code": "HEMAT5K",
+      "type": "fixed",
+      "discount": 5000,
+      "maxDiscount": 5000,
+      "minOrder": 10000,
+      "usageLimit": 50,
+      "usedCount": 0,
+      "isActive": true
+    }
+  ],
+  "chats": []
+}

@@ -15,6 +15,7 @@ function initApp() {
   initUserSession();
   setupEventListeners();
   loadPublicInfo();
+  updateCustomSlider();
 
   if (currentUser) {
     refreshUserProfile();
@@ -233,6 +234,58 @@ function renderPackagesList() {
       </div>
     `;
   }).join('');
+}
+
+// Custom Slider Configurator Logic
+function updateCustomSlider() {
+  const ram = parseInt(document.getElementById('rangeRam')?.value || '2', 10);
+  const cpu = parseInt(document.getElementById('rangeCpu')?.value || '150', 10);
+  const disk = parseInt(document.getElementById('rangeDisk')?.value || '4', 10);
+
+  document.getElementById('sliderRamVal').innerText = `${ram} GB`;
+  document.getElementById('sliderCpuVal').innerText = `${cpu}% CPU`;
+  document.getElementById('sliderDiskVal').innerText = `${disk} GB`;
+
+  // Formula Kalkulasi Harga: Base RAM (Rp 2.000/GB) + CPU (Rp 1.000 per 100%) + Disk (Rp 500 per 2GB)
+  const price = Math.round((ram * 2000) + ((cpu / 100) * 1000) + ((disk / 2) * 500));
+  document.getElementById('sliderTotalPrice').innerText = formatRupiah(price);
+}
+
+function orderFromCustomSlider() {
+  if (!currentUser) {
+    showToast('Silakan login terlebih dahulu untuk menyewa server!', 'warning');
+    openModal('modalLogin');
+    return;
+  }
+
+  const ram = parseInt(document.getElementById('rangeRam')?.value || '2', 10);
+  const cpu = parseInt(document.getElementById('rangeCpu')?.value || '150', 10);
+  const disk = parseInt(document.getElementById('rangeDisk')?.value || '4', 10);
+  const price = Math.round((ram * 2000) + ((cpu / 100) * 1000) + ((disk / 2) * 500));
+
+  const customPkg = {
+    id: `custom-${ram}gb-${cpu}cpu`,
+    name: `Custom Panel ${ram}GB (${cpu}% CPU)`,
+    ram: `${ram * 1024} MB (${ram}GB)`,
+    cpu: `${cpu}% CPU`,
+    disk: `${disk * 1024} MB (${disk}GB)`,
+    price: price,
+    duration: '30 Hari'
+  };
+
+  selectedPackageForBuy = customPkg;
+  appliedBuyVoucherData = null;
+
+  document.getElementById('buyPackageId').value = customPkg.id;
+  document.getElementById('modalBuyPkgName').innerText = customPkg.name;
+  document.getElementById('modalBuyPkgSpecs').innerText = `RAM: ${customPkg.ram} | CPU: ${customPkg.cpu} | Disk: ${customPkg.disk}`;
+  document.getElementById('buyRawPrice').innerText = formatRupiah(customPkg.price);
+  document.getElementById('buyFinalPrice').innerText = formatRupiah(customPkg.price);
+  document.getElementById('buyDiscountRow').classList.add('hidden');
+  document.getElementById('buyVoucherInput').value = '';
+  document.getElementById('buyVoucherMsg').classList.add('hidden');
+
+  openModal('modalCheckout');
 }
 
 // Order Server Checkout Modal

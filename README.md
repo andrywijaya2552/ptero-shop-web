@@ -4,22 +4,27 @@ Website Toko Jual Panel Pterodactyl & Cloud Hosting dengan Sistem Saldo Otomatis
 
 ---
 
-## 🚀 Fitur Unggulan Terbaru (v2.1.0)
-1. **Multi-Payment Gateway Otomatis**:
+## 🚀 Fitur Unggulan Terbaru (v2.2.0)
+1. **Redeem Kode Hadiah (Saldo / Produk)**:
+   - Admin dapat membuat kode redeem yang bisa ditukar member menjadi **Saldo** atau **Produk Panel Pterodactyl gratis**.
+   - Pengaturan kuota total & limit pemakaian per user, plus riwayat klaim redeem.
+   - Hadiah produk otomatis membuat akun & kredensial panel tanpa biaya.
+2. **Multi-Payment Gateway Otomatis**:
    - **Pakasir Payment Gateway** (QRIS & Virtual Account BNI / BRI).
    - **Flowix Payment Gateway** (QRIS & Virtual Account BCA / Mandiri).
    - **Kasera Pay Payment Gateway** (QRIS & Virtual Account BRI / BNI / Mandiri / Permata / CIMB, dengan verifikasi signature webhook `Kasera-Signature-V1`).
    - **Metode Transfer Manual** (QRIS All Payment, DANA, GoPay, Bank BCA).
-2. **Standard EMVCo QRIS Generator**:
+3. **Standard EMVCo QRIS Generator**:
    - Render QRIS tajam, presisi, dan resolusi tinggi (bebas error scan dari semua E-Wallet & M-Banking).
-3. **Pterodactyl Dynamic Port Binding**:
+4. **Pterodactyl Dynamic Port Binding**:
    - Otomatis menyesuaikan port alokasi panel Pterodactyl (`SERVER_PORT` / `PORT` / `WEB_PORT`) dan host `0.0.0.0`.
-4. **Auto Account & Server Generator**:
-   - Akun dan kredensial login Pterodactyl di-generate instan setelah pembelian server.
-5. **Panel Admin Lengkap**:
+5. **Auto Account & Server Generator**:
+   - Akun dan kredensial login Pterodactyl di-generate instan setelah pembelian server atau redeem produk.
+6. **Panel Admin Lengkap**:
    - Konfirmasi & Approve/Reject Topup.
    - Manajemen paket panel (tambah/edit/hapus harga & spesifikasi).
    - Manajemen kode voucher & diskon promo.
+   - Manajemen kode redeem (saldo/produk) & riwayat klaim.
    - Live Chat Support & Running Text Broadcast.
    - Konfigurasi API Key Gateway & Domain Panel.
 

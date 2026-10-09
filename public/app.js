@@ -133,6 +133,7 @@ function switchTab(tabId) {
 
   if (tabId === 'my-servers') loadUserServers();
   if (tabId === 'topup') loadUserTopups();
+  if (tabId === 'redeem') loadUserRedemptions();
   if (tabId === 'admin') loadAdminData();
 }
 
@@ -728,11 +729,98 @@ async function loadUserTopups() {
   }
 }
 
+// ----------------- REDEEM KODE -----------------
+
+async function handleRedeemCode(e) {
+  e.preventDefault();
+  const code = (document.getElementById('redeemCodeInput')?.value || '').trim();
+  const resultBox = document.getElementById('redeemResultBox');
+
+  if (!currentUser) {
+    showToast('Silakan login terlebih dahulu untuk redeem kode!', 'warning');
+    openModal('modalLogin');
+    return;
+  }
+  if (!code) {
+    showToast('Masukkan kode redeem Anda!', 'warning');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/redeem', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-user-id': currentUser.id },
+      body: JSON.stringify({ code })
+    });
+    const data = await res.json();
+
+    if (resultBox) {
+      resultBox.classList.remove('hidden');
+      resultBox.className = `p-4 rounded-xl text-xs leading-relaxed border ${data.success ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300' : 'bg-red-500/10 border-red-500/40 text-red-300'}`;
+      resultBox.innerHTML = `${data.success ? '<i class="ri-checkbox-circle-fill"></i>' : '<i class="ri-error-warning-fill"></i>'} ${data.message}`;
+    }
+
+    if (data.success) {
+      showToast(data.message, 'success');
+      document.getElementById('redeemCodeInput').value = '';
+      await refreshUserProfile();
+      loadUserRedemptions();
+      if (data.type === 'product') {
+        showToast('Buka tab "Server Saya" untuk melihat akun panel baru Anda.', 'info');
+      }
+    } else {
+      showToast(data.message || 'Gagal redeem kode.', 'error');
+    }
+  } catch (err) {
+    console.error('Error redeem:', err);
+    showToast('Terjadi kesalahan saat redeem kode.', 'error');
+  }
+}
+
+async function loadUserRedemptions() {
+  const container = document.getElementById('redeemHistoryContainer');
+  if (!container) return;
+  if (!currentUser) {
+    container.innerHTML = `<p class="text-center text-gray-500 text-xs py-10">Login untuk melihat riwayat redeem Anda.</p>`;
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/redeem/history', {
+      headers: { 'x-user-id': currentUser.id }
+    });
+    const data = await res.json();
+    if (!data.success || !data.redemptions || data.redemptions.length === 0) {
+      container.innerHTML = `<p class="text-center text-gray-500 text-xs py-10">Belum ada riwayat redeem.</p>`;
+      return;
+    }
+
+    container.innerHTML = data.redemptions.map(r => `
+      <div class="p-3.5 rounded-xl bg-gray-900 border border-gray-800 text-xs space-y-1.5">
+        <div class="flex justify-between items-center">
+          <span class="font-mono font-bold text-fuchsia-300">${r.code}</span>
+          <span class="px-2 py-0.5 rounded-full font-bold text-[10px] ${r.type === 'product' ? 'bg-cyan-500/20 text-cyan-300' : 'bg-emerald-500/20 text-emerald-400'}">
+            ${r.type === 'product' ? 'Produk' : 'Saldo'}
+          </span>
+        </div>
+        <div class="flex justify-between text-gray-300">
+          <span>Hadiah:</span>
+          <span class="font-bold text-white">${r.type === 'product' ? (r.packageName || 'Panel') : formatRupiah(r.balance)}</span>
+        </div>
+        ${r.orderId ? `<div class="flex justify-between text-gray-400 text-[11px]"><span>ID Server:</span><span class="font-mono text-cyan-300">${r.orderId}</span></div>` : ''}
+        <div class="text-[10px] text-gray-500">${new Date(r.createdAt).toLocaleString('id-ID')}</div>
+      </div>
+    `).join('');
+  } catch (err) {
+    console.error('Error load redemptions:', err);
+  }
+}
+
 // ----------------- ADMIN LOGIC -----------------
 
 function switchAdminSubTab(subTabId) {
   document.querySelectorAll('.admin-subcontent').forEach(el => el.classList.add('hidden'));
-  ['adm-topups', 'adm-servers', 'adm-packages', 'adm-vouchers', 'adm-settings', 'adm-users'].forEach(id => {
+  ['adm-topups', 'adm-servers', 'adm-packages', 'adm-vouchers', 'adm-redeem', 'adm-settings', 'adm-users'].forEach(id => {
     const btn = document.getElementById(`admSubBtn-${id}`);
     if (btn) {
       btn.classList.remove('bg-gray-800', 'text-white', 'border-t-2', 'border-cyan-500');
@@ -804,6 +892,8 @@ async function loadAdminData() {
       renderAdminServers(data.orders || []);
       renderAdminPackages(data.packages || []);
       renderAdminVouchers(data.vouchers || []);
+      renderAdminRedeemCodes(data.redeemCodes || []);
+      renderAdminRedemptions(data.redemptions || []);
       renderAdminUsers(data.users || []);
     }
   } catch (err) {
@@ -1037,6 +1127,158 @@ async function deleteAdminVoucher(code) {
     }
   } catch (err) {
     showToast('Gagal hapus voucher.', 'error');
+  }
+}
+
+function renderAdminRedeemCodes(codes) {
+  const tbody = document.getElementById('admRedeemTableBody');
+  if (!tbody) return;
+
+  if (!codes || codes.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" class="py-6 text-center text-gray-500">Belum ada kode redeem.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = codes.map(v => {
+    const reward = v.type === 'product'
+      ? (currentPackages.find(p => p.id === v.packageId)?.name || v.packageId || 'Produk')
+      : formatRupiah(v.balance || 0);
+    return `
+      <tr class="hover:bg-gray-900/40 transition">
+        <td class="py-2.5 px-3 font-mono font-bold text-fuchsia-300">${v.code}</td>
+        <td class="py-2.5 px-3">
+          <span class="px-2 py-0.5 rounded text-[10px] font-bold ${v.type === 'product' ? 'bg-cyan-500/20 text-cyan-300' : 'bg-emerald-500/20 text-emerald-400'}">
+            ${v.type === 'product' ? 'Produk' : 'Saldo'}
+          </span>
+        </td>
+        <td class="py-2.5 px-3 text-white font-bold">${reward}</td>
+        <td class="py-2.5 px-3 text-center text-gray-400 font-mono">${v.usedCount || 0} / ${v.usageLimit || '∞'}</td>
+        <td class="py-2.5 px-3 text-center text-gray-400 font-mono">${v.perUserLimit || 1}x</td>
+        <td class="py-2.5 px-3 text-center">
+          <span class="px-2 py-0.5 rounded text-[10px] font-bold ${v.isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-gray-600/30 text-gray-400'}">${v.isActive ? 'Aktif' : 'Nonaktif'}</span>
+        </td>
+        <td class="py-2.5 px-3 text-center">
+          <div class="flex justify-center gap-1.5">
+            <button onclick='openEditRedeemModal(${JSON.stringify(v)})' class="px-2 py-1 bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-black rounded text-[10px] font-bold transition">Edit</button>
+            <button onclick="deleteAdminRedeem('${v.code}')" class="px-2 py-1 bg-red-600 hover:bg-red-500 text-white rounded text-[10px]">Hapus</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function renderAdminRedemptions(redemptions) {
+  const tbody = document.getElementById('admRedeemHistoryBody');
+  if (!tbody) return;
+
+  if (!redemptions || redemptions.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" class="py-6 text-center text-gray-500">Belum ada klaim redeem.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = redemptions.map(r => `
+    <tr class="hover:bg-gray-900/40 transition">
+      <td class="py-2.5 px-3 font-mono font-bold text-fuchsia-300">${r.code}</td>
+      <td class="py-2.5 px-3 font-bold text-white">${r.username}</td>
+      <td class="py-2.5 px-3">
+        <span class="px-2 py-0.5 rounded text-[10px] font-bold ${r.type === 'product' ? 'bg-cyan-500/20 text-cyan-300' : 'bg-emerald-500/20 text-emerald-400'}">
+          ${r.type === 'product' ? 'Produk' : 'Saldo'}
+        </span>
+      </td>
+      <td class="py-2.5 px-3 text-gray-300">${r.type === 'product' ? (r.packageName || 'Panel') : formatRupiah(r.balance)}</td>
+      <td class="py-2.5 px-3 text-gray-400 text-[11px]">${new Date(r.createdAt).toLocaleString('id-ID')}</td>
+    </tr>
+  `).join('');
+}
+
+function populateRedeemPackageSelect() {
+  const sel = document.getElementById('adminRedeemPackage');
+  if (!sel) return;
+  sel.innerHTML = currentPackages.map(p => `<option value="${p.id}">${p.name} - ${formatRupiah(p.price)}</option>`).join('');
+}
+
+function handleRedeemTypeChange() {
+  const type = document.getElementById('adminRedeemType').value;
+  document.getElementById('adminRedeemBalanceBox').classList.toggle('hidden', type !== 'balance');
+  document.getElementById('adminRedeemProductBox').classList.toggle('hidden', type !== 'product');
+}
+
+function openAddRedeemModal() {
+  populateRedeemPackageSelect();
+  document.getElementById('adminRedeemOriginal').value = '';
+  document.getElementById('adminRedeemCode').value = '';
+  document.getElementById('adminRedeemType').value = 'balance';
+  document.getElementById('adminRedeemBalance').value = '';
+  document.getElementById('adminRedeemLimit').value = '0';
+  document.getElementById('adminRedeemPerUser').value = '1';
+  document.getElementById('adminRedeemNote').value = '';
+  document.getElementById('adminRedeemActive').value = 'true';
+  handleRedeemTypeChange();
+  openModal('modalAdminRedeem');
+}
+
+function openEditRedeemModal(v) {
+  populateRedeemPackageSelect();
+  document.getElementById('adminRedeemOriginal').value = v.code;
+  document.getElementById('adminRedeemCode').value = v.code;
+  document.getElementById('adminRedeemType').value = v.type;
+  document.getElementById('adminRedeemBalance').value = v.balance || '';
+  document.getElementById('adminRedeemPackage').value = v.packageId || '';
+  document.getElementById('adminRedeemLimit').value = v.usageLimit || 0;
+  document.getElementById('adminRedeemPerUser').value = v.perUserLimit || 1;
+  document.getElementById('adminRedeemNote').value = v.note || '';
+  document.getElementById('adminRedeemActive').value = String(v.isActive !== false);
+  handleRedeemTypeChange();
+  openModal('modalAdminRedeem');
+}
+
+async function handleSaveAdminRedeem(e) {
+  e.preventDefault();
+  const code = document.getElementById('adminRedeemCode').value.trim();
+  const original = document.getElementById('adminRedeemOriginal').value.trim();
+  const type = document.getElementById('adminRedeemType').value;
+  const balance = document.getElementById('adminRedeemBalance').value;
+  const packageId = document.getElementById('adminRedeemPackage').value;
+  const usageLimit = document.getElementById('adminRedeemLimit').value;
+  const perUserLimit = document.getElementById('adminRedeemPerUser').value;
+  const note = document.getElementById('adminRedeemNote').value.trim();
+  const isActive = document.getElementById('adminRedeemActive').value === 'true';
+
+  try {
+    const res = await fetch('/api/admin/redeem/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-user-id': currentUser.id },
+      body: JSON.stringify({ code, original, type, balance, packageId, usageLimit, perUserLimit, note, isActive })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message, 'success');
+      closeModal('modalAdminRedeem');
+      loadAdminData();
+    } else {
+      showToast(data.message || 'Gagal menyimpan kode redeem.', 'error');
+    }
+  } catch (err) {
+    showToast('Gagal menyimpan kode redeem.', 'error');
+  }
+}
+
+async function deleteAdminRedeem(code) {
+  if (!confirm(`Hapus kode redeem ${code}?`)) return;
+  try {
+    const res = await fetch('/api/admin/redeem/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-user-id': currentUser.id },
+      body: JSON.stringify({ code })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message, 'success');
+      loadAdminData();
+    }
+  } catch (err) {
+    showToast('Gagal hapus kode redeem.', 'error');
   }
 }
 

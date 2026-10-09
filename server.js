@@ -223,6 +223,35 @@ function getDB() {
           isActive: true
         }
       ],
+      redeemCodes: [
+        {
+          code: 'GRATIS1GB',
+          type: 'product',
+          balance: 0,
+          packageId: 'ptero-1gb',
+          note: 'Bonus panel 1GB gratis',
+          usageLimit: 20,
+          perUserLimit: 1,
+          usedCount: 0,
+          usedBy: [],
+          isActive: true,
+          createdAt: new Date().toISOString()
+        },
+        {
+          code: 'SALDO5K',
+          type: 'balance',
+          balance: 5000,
+          packageId: '',
+          note: 'Bonus saldo Rp 5.000',
+          usageLimit: 100,
+          perUserLimit: 1,
+          usedCount: 0,
+          usedBy: [],
+          isActive: true,
+          createdAt: new Date().toISOString()
+        }
+      ],
+      redemptions: [],
       chats: []
     };
     fs.writeFileSync(DB_FILE, JSON.stringify(initial, null, 2));
@@ -230,14 +259,53 @@ function getDB() {
   }
   try {
     const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+    // Migrasi ringan untuk database lama agar field baru selalu tersedia
+    if (!Array.isArray(data.redeemCodes)) data.redeemCodes = [];
+    if (!Array.isArray(data.redemptions)) data.redemptions = [];
+    if (!Array.isArray(data.vouchers)) data.vouchers = [];
+    if (!Array.isArray(data.orders)) data.orders = [];
+    if (!Array.isArray(data.topups)) data.topups = [];
     return data;
   } catch (err) {
-    return { users: [], packages: [], orders: [], topups: [], vouchers: [], chats: [], settings: {} };
+    return { users: [], packages: [], orders: [], topups: [], vouchers: [], redeemCodes: [], redemptions: [], chats: [], settings: {} };
   }
 }
 
 function saveDB(data) {
   fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+}
+
+// Generate otomatis Akun & Server Pterodactyl (dipakai saat beli maupun redeem)
+function generatePteroOrder(db, user, pkg, serverName, eggType, extra = {}) {
+  const randomStr = Math.random().toString(36).substring(2, 7);
+  const pteroUsername = (user.username.replace(/[^a-zA-Z0-9]/g, '') + '_' + randomStr).toLowerCase();
+  const pteroPassword = 'Ptero' + Math.floor(100000 + Math.random() * 900000) + '#';
+  const pteroLoginUrl = db.settings.pteroDomain || 'https://panel.nanika.fahridev.my.id';
+
+  return {
+    id: 'PTR-' + Math.floor(1000 + Math.random() * 9000),
+    userId: user.id,
+    username: user.username,
+    packageId: pkg.id,
+    packageName: pkg.name,
+    ram: pkg.ram,
+    cpu: pkg.cpu,
+    disk: pkg.disk,
+    eggType: eggType || 'NodeJS (Bot WA / Web)',
+    serverName: (serverName || `Redeem ${pkg.name}`).trim(),
+    pteroUsername: pteroUsername,
+    pteroPassword: pteroPassword,
+    pteroLoginUrl: pteroLoginUrl,
+    price: 0,
+    rawPrice: 0,
+    discount: 0,
+    voucherCode: null,
+    source: extra.source || 'purchase',
+    redeemCode: extra.redeemCode || null,
+    status: 'Active',
+    expiredAt: new Date(Date.now() + 30 * 24 * 3600000).toISOString(),
+    createdAt: new Date().toISOString()
+  };
 }
 
 // ----------------- API ENDPOINTS -----------------
@@ -497,6 +565,98 @@ app.get('/api/orders/my-servers', (req, res) => {
   const db = getDB();
   const userOrders = (db.orders || []).filter(o => o.userId === userId);
   return res.json({ success: true, orders: userOrders });
+});
+
+// 7.1 Redeem Kode (Hasil berupa Saldo atau Produk Panel)
+app.post('/api/redeem', (req, res) => {
+  const userId = req.headers['x-user-id'];
+  const { code } = req.body;
+
+  if (!userId) return res.status(401).json({ success: false, message: 'Silakan login terlebih dahulu untuk redeem kode!' });
+  if (!code || !code.trim()) return res.status(400).json({ success: false, message: 'Masukkan kode redeem Anda!' });
+
+  const db = getDB();
+  const user = db.users.find(u => u.id === userId);
+  if (!user) return res.status(404).json({ success: false, message: 'User tidak ditemukan.' });
+
+  const upper = code.trim().toUpperCase();
+  const rc = (db.redeemCodes || []).find(item => item.code.toUpperCase() === upper);
+
+  if (!rc || !rc.isActive) {
+    return res.status(404).json({ success: false, message: 'Kode redeem tidak valid atau sudah tidak aktif!' });
+  }
+
+  if (rc.usageLimit && (rc.usedCount || 0) >= rc.usageLimit) {
+    return res.status(400).json({ success: false, message: 'Kuota kode redeem ini sudah habis!' });
+  }
+
+  const perUserLimit = rc.perUserLimit || 1;
+  const usedByUser = (rc.usedBy || []).filter(u => u.userId === user.id).length;
+  if (perUserLimit > 0 && usedByUser >= perUserLimit) {
+    return res.status(400).json({ success: false, message: 'Anda sudah pernah menggunakan kode redeem ini!' });
+  }
+
+  db.redemptions = db.redemptions || [];
+  let resultMessage = '';
+  let grantedOrder = null;
+  let grantedBalance = 0;
+
+  if (rc.type === 'product') {
+    const pkg = (db.packages || []).find(p => p.id === rc.packageId);
+    if (!pkg) {
+      return res.status(400).json({ success: false, message: 'Paket produk untuk kode redeem ini tidak ditemukan. Hubungi admin.' });
+    }
+    grantedOrder = generatePteroOrder(db, user, pkg, `Redeem ${pkg.name}`, 'NodeJS (Bot WA / Web)', {
+      source: 'redeem',
+      redeemCode: rc.code
+    });
+    db.orders.unshift(grantedOrder);
+    resultMessage = `🎉 Selamat! Anda mendapatkan ${pkg.name} secara gratis. Akun panel sudah dibuat otomatis.`;
+  } else {
+    grantedBalance = Number(rc.balance) || 0;
+    if (grantedBalance <= 0) {
+      return res.status(400).json({ success: false, message: 'Nominal saldo pada kode redeem ini tidak valid. Hubungi admin.' });
+    }
+    user.balance = (user.balance || 0) + grantedBalance;
+    resultMessage = `🎉 Selamat! Saldo Anda bertambah Rp ${grantedBalance.toLocaleString()}.`;
+  }
+
+  rc.usedCount = (rc.usedCount || 0) + 1;
+  rc.usedBy = rc.usedBy || [];
+  rc.usedBy.push({ userId: user.id, username: user.username, at: new Date().toISOString() });
+
+  db.redemptions.unshift({
+    id: 'RDM-' + Date.now(),
+    code: rc.code,
+    userId: user.id,
+    username: user.username,
+    type: rc.type,
+    balance: grantedBalance,
+    packageId: rc.type === 'product' ? rc.packageId : '',
+    packageName: grantedOrder ? grantedOrder.packageName : '',
+    orderId: grantedOrder ? grantedOrder.id : '',
+    createdAt: new Date().toISOString()
+  });
+
+  saveDB(db);
+
+  return res.json({
+    success: true,
+    message: resultMessage,
+    type: rc.type,
+    newBalance: user.balance,
+    order: grantedOrder
+  });
+});
+
+// 7.2 Riwayat Redeem User
+app.get('/api/redeem/history', (req, res) => {
+  const userId = req.headers['x-user-id'];
+  if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+  const db = getDB();
+  const history = (db.redemptions || []).filter(r => r.userId === userId);
+  return res.json({ success: true, redemptions: history });
 });
 
 // 8. Create Topup Request (Manual & Pakasir Automatic)
@@ -1325,6 +1485,8 @@ app.get('/api/admin/all-data', checkAdmin, (req, res) => {
     topups: db.topups,
     packages: db.packages,
     vouchers: db.vouchers,
+    redeemCodes: db.redeemCodes || [],
+    redemptions: db.redemptions || [],
     payments: db.payments
   });
 });
@@ -1473,6 +1635,67 @@ app.post('/api/admin/vouchers/delete', checkAdmin, (req, res) => {
   db.vouchers = (db.vouchers || []).filter(v => v.code.toUpperCase() !== (code || '').toUpperCase());
   saveDB(db);
   return res.json({ success: true, message: 'Voucher berhasil dihapus!' });
+});
+
+// Admin Save Redeem Code (Saldo / Produk)
+app.post('/api/admin/redeem/save', checkAdmin, (req, res) => {
+  const { code, original, type, balance, packageId, note, usageLimit, perUserLimit, isActive } = req.body;
+  const db = getDB();
+  db.redeemCodes = db.redeemCodes || [];
+
+  let finalCode = (code || '').trim().toUpperCase();
+  if (!finalCode) {
+    finalCode = 'RDM-' + crypto.randomBytes(3).toString('hex').toUpperCase();
+  }
+
+  if (!['balance', 'product'].includes(type)) {
+    return res.status(400).json({ success: false, message: 'Tipe redeem tidak valid!' });
+  }
+  if (type === 'product' && !packageId) {
+    return res.status(400).json({ success: false, message: 'Pilih paket produk untuk redeem!' });
+  }
+  if (type === 'balance' && (!balance || Number(balance) <= 0)) {
+    return res.status(400).json({ success: false, message: 'Masukkan nominal saldo yang valid!' });
+  }
+
+  const orig = (original || '').trim().toUpperCase();
+  const idx = orig
+    ? db.redeemCodes.findIndex(v => v.code.toUpperCase() === orig)
+    : db.redeemCodes.findIndex(v => v.code.toUpperCase() === finalCode);
+
+  const collision = db.redeemCodes.findIndex(v => v.code.toUpperCase() === finalCode);
+  if (collision !== -1 && collision !== idx) {
+    return res.status(400).json({ success: false, message: 'Kode redeem sudah dipakai, silakan pakai kode lain!' });
+  }
+
+  const data = {
+    code: finalCode,
+    type,
+    balance: type === 'balance' ? (Number(balance) || 0) : 0,
+    packageId: type === 'product' ? packageId : '',
+    note: (note || '').trim(),
+    usageLimit: Number(usageLimit) || 0,
+    perUserLimit: Number(perUserLimit) || 1,
+    usedCount: idx !== -1 ? (db.redeemCodes[idx].usedCount || 0) : 0,
+    usedBy: idx !== -1 ? (db.redeemCodes[idx].usedBy || []) : [],
+    isActive: isActive !== undefined ? !!isActive : true,
+    createdAt: idx !== -1 ? db.redeemCodes[idx].createdAt : new Date().toISOString()
+  };
+
+  if (idx !== -1) db.redeemCodes[idx] = data;
+  else db.redeemCodes.push(data);
+
+  saveDB(db);
+  return res.json({ success: true, message: `Kode redeem ${finalCode} berhasil disimpan!`, redeemCode: data });
+});
+
+// Admin Delete Redeem Code
+app.post('/api/admin/redeem/delete', checkAdmin, (req, res) => {
+  const { code } = req.body;
+  const db = getDB();
+  db.redeemCodes = (db.redeemCodes || []).filter(v => v.code.toUpperCase() !== (code || '').toUpperCase());
+  saveDB(db);
+  return res.json({ success: true, message: 'Kode redeem berhasil dihapus!' });
 });
 
 // Admin Update Server Status (Suspend / Active / Delete)

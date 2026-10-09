@@ -2,11 +2,15 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const QRCode = require('qrcode');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DB_FILE = path.join(__dirname, 'database.json');
+const PAKASIR_BASE = 'https://app.pakasir.com/api';
+const FLOWIX_BASE = 'https://flowix.web.id/api/v1';
 
 app.use(cors());
 app.use(express.json());
@@ -121,7 +125,14 @@ function getDB() {
         pteroDomain: process.env.PTERO_DOMAIN || 'https://panel.nanika.fahridev.my.id',
         pteroApiKey: process.env.PTERO_API_KEY || 'ptla_dummy_api_key',
         contactWa: '6285812345678',
-        announcementText: '🚀 SELAMAT DATANG DI NUSA PTERO STORE! Gunakan Kode Promo: PTERONEW untuk diskon 30%! Server aktif instan 24/7 dan bergaransi penuh.'
+        announcementText: '🚀 SELAMAT DATANG DI NUSA PTERO STORE! Gunakan Kode Promo: PTERONEW untuk diskon 30%! Server aktif instan 24/7 dan bergaransi penuh.',
+        pakasirProject: process.env.PAKASIR_PROJECT || '',
+        pakasirApiKey: process.env.PAKASIR_API_KEY || '',
+        pakasirAutoActive: true,
+        flowixApiKey: process.env.FLOWIX_API_KEY || 'sk-d2e1f23c-817d343e328c-a8fe474da8a3',
+        flowixMerchantId: process.env.FLOWIX_MERCHANT_ID || '',
+        flowixWebhookSecret: process.env.FLOWIX_WEBHOOK_SECRET || '',
+        flowixAutoActive: true
       },
       users: [
         {
@@ -224,9 +235,30 @@ function saveDB(data) {
 // 1. Get Public Settings & Packages
 app.get('/api/public/info', (req, res) => {
   const db = getDB();
+  const safeSettings = { ...db.settings };
+  // Hide API Key from public response for security, but expose if Gateway is configured
+  const hasPakasir = !!(db.settings?.pakasirProject && db.settings?.pakasirApiKey);
+  const hasFlowix = !!(db.settings?.flowixApiKey || process.env.FLOWIX_API_KEY);
+  safeSettings.hasPakasir = hasPakasir;
+  safeSettings.hasFlowix = hasFlowix;
+  safeSettings.pakasirAutoActive = db.settings?.pakasirAutoActive !== false;
+  safeSettings.flowixAutoActive = db.settings?.flowixAutoActive !== false;
+  if (safeSettings.pakasirApiKey) {
+    safeSettings.pakasirApiKey = '***';
+  }
+  if (safeSettings.flowixApiKey) {
+    safeSettings.flowixApiKey = '***';
+  }
+  if (safeSettings.flowixWebhookSecret) {
+    safeSettings.flowixWebhookSecret = '***';
+  }
+  if (safeSettings.pteroApiKey) {
+    safeSettings.pteroApiKey = '***';
+  }
+
   res.json({
     success: true,
-    settings: db.settings || {},
+    settings: safeSettings,
     packages: db.packages || INITIAL_PACKAGES,
     payments: db.payments || INITIAL_PAYMENTS
   });
@@ -448,21 +480,226 @@ app.get('/api/orders/my-servers', (req, res) => {
   return res.json({ success: true, orders: userOrders });
 });
 
-// 8. Create Topup Request
-app.post('/api/topup/request', (req, res) => {
+// 8. Create Topup Request (Manual & Pakasir Automatic)
+app.post('/api/topup/request', async (req, res) => {
   const userId = req.headers['x-user-id'];
-  const { paymentId, amount, notes } = req.body;
+  const { paymentId, amount, notes, method = 'qris' } = req.body;
 
   if (!userId) return res.status(401).json({ success: false, message: 'Silakan login!' });
   const depAmount = parseInt(amount, 10);
-  if (isNaN(depAmount) || depAmount < 3000) {
-    return res.status(400).json({ success: false, message: 'Minimal deposit adalah Rp 3.000!' });
+  if (isNaN(depAmount) || depAmount < 75) {
+    return res.status(400).json({ success: false, message: 'Minimal deposit adalah Rp 75!' });
   }
 
   const db = getDB();
   const user = db.users.find(u => u.id === userId);
   if (!user) return res.status(404).json({ success: false, message: 'User tidak ditemukan.' });
 
+  // 1.2 JIKA METODE PEMBAYARAN FLOWIX AUTO GATEWAY (flowix.web.id)
+  if (paymentId === 'flowix' || paymentId === 'flowix-qris' || paymentId === 'flowix-va') {
+    const flowixApiKey = db.settings?.flowixApiKey || process.env.FLOWIX_API_KEY || 'sk-d2e1f23c-817d343e328c-a8fe474da8a3';
+    const flowixMerchantId = db.settings?.flowixMerchantId || process.env.FLOWIX_MERCHANT_ID || '';
+
+    const payMethod = method || 'QRIS';
+    const orderId = `DEP-FLX-${Date.now()}-${crypto.randomBytes(2).toString('hex')}`.toUpperCase();
+
+    try {
+      // Flowix API Deposit
+      const headers = {
+        'Content-Type': 'application/json',
+        'api_key': flowixApiKey
+      };
+      if (flowixMerchantId) {
+        headers['merchant_id'] = flowixMerchantId;
+      }
+
+      const flxRes = await fetch(`${FLOWIX_BASE}/deposit`, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify({
+          amount: depAmount,
+          method_code: payMethod.toUpperCase(),
+          fee_by_customer: true,
+          api_key: flowixApiKey,
+          merchant_id: flowixMerchantId
+        })
+      });
+
+      const flxData = await flxRes.json().catch(() => null);
+
+      if (!flxRes.ok || !flxData || !flxData.success) {
+        console.error('Flowix deposit error:', flxData);
+        return res.status(502).json({
+          success: false,
+          message: flxData?.message || 'Gagal membuat deposit di Flowix. Silakan pastikan API Key & Merchant ID Flowix benar di Admin Settings.',
+          detail: flxData
+        });
+      }
+
+      const deposit = flxData.data || {};
+      const totalPayment = deposit.amount_total || deposit.amount_request || depAmount;
+      const rawPaymentNumber = deposit.qr_string || deposit.pay_code || '';
+      
+      let cleanedPaymentNumber = rawPaymentNumber;
+      const qrisTagIdx = cleanedPaymentNumber.indexOf('000201');
+      if (qrisTagIdx > 0) {
+        cleanedPaymentNumber = cleanedPaymentNumber.substring(qrisTagIdx);
+      }
+
+      let qrDataUrl = '';
+      if (cleanedPaymentNumber) {
+        try {
+          qrDataUrl = await QRCode.toDataURL(cleanedPaymentNumber, {
+            errorCorrectionLevel: 'M',
+            margin: 3,
+            width: 450,
+            color: { dark: '#000000', light: '#ffffff' }
+          });
+        } catch (qrErr) {
+          console.error('QR code generation error:', qrErr);
+        }
+      }
+
+      const expiredAt = deposit.expired_at || new Date(Date.now() + 15 * 60000).toISOString();
+
+      const newTopup = {
+        id: orderId,
+        reffId: deposit.reff_id || orderId,
+        userId: user.id,
+        username: user.username,
+        paymentMethod: `Flowix (${payMethod.toUpperCase()})`,
+        gateway: 'flowix',
+        gatewayMethod: payMethod.toLowerCase(),
+        amount: depAmount,
+        totalPay: totalPayment,
+        fee: deposit.fee || 0,
+        paymentNumber: cleanedPaymentNumber,
+        qrDataUrl: qrDataUrl || deposit.qr_image || '',
+        payUrl: deposit.pay_url || '',
+        expiredAt: expiredAt,
+        proofUrl: '',
+        notes: notes || 'Otomatis via Flowix.web.id Payment Gateway',
+        status: 'Pending',
+        createdAt: new Date().toISOString()
+      };
+
+      db.topups.unshift(newTopup);
+      saveDB(db);
+
+      return res.json({
+        success: true,
+        message: 'Pembayaran Flowix otomatis berhasil dibuat! Silakan bayar sebelum kedaluwarsa.',
+        topup: newTopup,
+        isAutoGateway: true
+      });
+    } catch (err) {
+      console.error('Flowix fetch error:', err);
+      return res.status(500).json({ success: false, message: 'Terjadi gangguan jaringan saat menghubungi gateway Flowix.' });
+    }
+  }
+  if (paymentId === 'pakasir' || paymentId === 'pakasir-qris' || paymentId === 'pakasir-va') {
+    const project = db.settings?.pakasirProject || process.env.PAKASIR_PROJECT;
+    const apiKey = db.settings?.pakasirApiKey || process.env.PAKASIR_API_KEY;
+
+    if (!project || !apiKey) {
+      return res.status(400).json({
+        success: false,
+        message: 'Payment Gateway Pakasir belum dikonfigurasi oleh Admin. Silakan gunakan metode transfer manual atau hubungi admin.'
+      });
+    }
+
+    const payMethod = method === 'bni_va' || method === 'bri_va' ? method : 'qris';
+    const orderId = `DEP-PKS-${Date.now()}-${crypto.randomBytes(2).toString('hex')}`.toUpperCase();
+
+    try {
+      const pksRes = await fetch(`${PAKASIR_BASE}/transactioncreate/${payMethod}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project: project,
+          api_key: apiKey,
+          order_id: orderId,
+          amount: depAmount
+        })
+      });
+
+      const pksData = await pksRes.json();
+
+      if (!pksRes.ok || !pksData.payment) {
+        console.error('Pakasir transactioncreate error:', pksData);
+        return res.status(502).json({
+          success: false,
+          message: pksData.message || pksData.error || 'Gagal membuat pembayaran via Pakasir',
+          detail: pksData
+        });
+      }
+
+      const paymentUrl = `https://app.pakasir.com/pay/${project}/${depAmount}?order_id=${orderId}`;
+      const totalPayment = pksData.payment.total_payment || depAmount;
+      const rawPaymentNumber = pksData.payment.payment_number || '';
+      
+      // Bersihkan string QRIS jika ada prefix sandbox agar memenuhi spesifikasi EMVCo QRIS resmi
+      let cleanedPaymentNumber = rawPaymentNumber;
+      const qrisTagIdx = cleanedPaymentNumber.indexOf('000201');
+      if (qrisTagIdx > 0) {
+        cleanedPaymentNumber = cleanedPaymentNumber.substring(qrisTagIdx);
+      }
+
+      // Generate Data URL PNG beresolusi tinggi (crisp & standar EMVCo QRIS)
+      let qrDataUrl = '';
+      if (payMethod === 'qris' && cleanedPaymentNumber) {
+        try {
+          qrDataUrl = await QRCode.toDataURL(cleanedPaymentNumber, {
+            errorCorrectionLevel: 'M',
+            margin: 3,
+            width: 450,
+            color: {
+              dark: '#000000',
+              light: '#ffffff'
+            }
+          });
+        } catch (qrErr) {
+          console.error('QR code generation error:', qrErr);
+        }
+      }
+
+      const expiredAt = pksData.payment.expired_at || new Date(Date.now() + 30 * 60000).toISOString();
+
+      const newTopup = {
+        id: orderId,
+        userId: user.id,
+        username: user.username,
+        paymentMethod: `Pakasir (${payMethod.toUpperCase()})`,
+        gateway: 'pakasir',
+        gatewayMethod: payMethod,
+        amount: depAmount,
+        totalPay: totalPayment,
+        paymentNumber: cleanedPaymentNumber,
+        qrDataUrl: qrDataUrl,
+        paymentUrl: paymentUrl,
+        expiredAt: expiredAt,
+        proofUrl: '',
+        notes: notes || 'Otomatis via Pakasir Payment Gateway',
+        status: 'Pending',
+        createdAt: new Date().toISOString()
+      };
+
+      db.topups.unshift(newTopup);
+      saveDB(db);
+
+      return res.json({
+        success: true,
+        message: 'Pembayaran Pakasir otomatis berhasil dibuat! Silakan scan QRIS atau bayar sebelum kedaluwarsa.',
+        topup: newTopup,
+        isAutoGateway: true
+      });
+    } catch (err) {
+      console.error('Pakasir fetch error:', err);
+      return res.status(500).json({ success: false, message: 'Terjadi gangguan jaringan saat menghubungi gateway Pakasir.' });
+    }
+  }
+
+  // 2. METODE TRANSFER MANUAL (QRIS, DANA, GoPay, Bank BCA)
   const pay = (db.payments || []).find(p => p.id === paymentId) || { name: 'QRIS All Payment' };
   const uniqueCode = Math.floor(10 + Math.random() * 890);
   const totalPay = depAmount + uniqueCode;
@@ -472,6 +709,7 @@ app.post('/api/topup/request', (req, res) => {
     userId: user.id,
     username: user.username,
     paymentMethod: pay.name,
+    gateway: 'manual',
     amount: depAmount,
     uniqueCode: uniqueCode,
     totalPay: totalPay,
@@ -487,8 +725,247 @@ app.post('/api/topup/request', (req, res) => {
   return res.json({
     success: true,
     message: 'Tiket deposit berhasil dibuat! Silakan transfer sesuai total bayar.',
-    topup: newTopup
+    topup: newTopup,
+    isAutoGateway: false
   });
+});
+
+// 8.1.2 Cek Status Pembayaran Flowix (Polling / Manual Check)
+app.get('/api/topup/check-flowix/:topupId', async (req, res) => {
+  const { topupId } = req.params;
+  const db = getDB();
+  const item = (db.topups || []).find(t => t.id === topupId || t.reffId === topupId);
+
+  if (!item) {
+    return res.status(404).json({ success: false, message: 'Data deposit tidak ditemukan.' });
+  }
+
+  if (item.status === 'Approved') {
+    return res.json({ success: true, status: 'Approved', message: 'Pembayaran sudah lunas dan saldo sudah masuk!' });
+  }
+
+  const flowixApiKey = db.settings?.flowixApiKey || process.env.FLOWIX_API_KEY || 'sk-d2e1f23c-817d343e328c-a8fe474da8a3';
+  const flowixMerchantId = db.settings?.flowixMerchantId || process.env.FLOWIX_MERCHANT_ID || '';
+  const reffId = item.reffId || item.id;
+
+  try {
+    const headers = {
+      'api_key': flowixApiKey
+    };
+    if (flowixMerchantId) headers['merchant_id'] = flowixMerchantId;
+
+    const response = await fetch(`${FLOWIX_BASE}/deposit/${encodeURIComponent(reffId)}`, {
+      headers: headers
+    });
+    const flxData = await response.json().catch(() => null);
+
+    if (flxData && flxData.success && flxData.data) {
+      const deposit = flxData.data;
+      const status = String(deposit.status || '').toLowerCase();
+
+      if (status === 'success' || status === 'paid') {
+        item.status = 'Approved';
+        item.approvedAt = new Date().toISOString();
+        const user = db.users.find(u => u.id === item.userId);
+        if (user) {
+          user.balance += item.amount;
+        }
+        saveDB(db);
+
+        return res.json({
+          success: true,
+          status: 'Approved',
+          message: '🎉 Pembayaran Flowix terverifikasi lunas! Saldo berhasil masuk.',
+          newBalance: user ? user.balance : undefined
+        });
+      } else if (status === 'failed' || status === 'expired' || status === 'canceled') {
+        item.status = 'Rejected';
+        item.rejectedAt = new Date().toISOString();
+        saveDB(db);
+        return res.json({ success: false, status: 'Rejected', message: 'Transaksi telah kedaluwarsa atau dibatalkan.' });
+      }
+    }
+
+    return res.json({
+      success: true,
+      status: item.status,
+      message: 'Menunggu pembayaran dari Anda...'
+    });
+  } catch (err) {
+    console.error('Check Flowix error:', err);
+    return res.status(500).json({ success: false, message: 'Gagal memeriksa status ke Flowix.' });
+  }
+});
+
+// 8.3 Webhook Flowix (flowix.web.id callback otomatis)
+app.post(['/webhook/flowix', '/webhooks/flowix'], async (req, res) => {
+  const db = getDB();
+  const rawBody = req.body;
+  const signature = req.header('X-Flowix-Signature');
+  const secret = db.settings?.flowixWebhookSecret || process.env.FLOWIX_WEBHOOK_SECRET || 'whsec_bbe2272d8fe61101125903d59f7061c';
+
+  // Validasi HMAC Signature jika ada header signature & secret terkonfigurasi
+  if (secret && signature) {
+    try {
+      const incoming = String(signature).replace(/^sha256=/i, '');
+      const expected = crypto.createHmac('sha256', secret).update(JSON.stringify(rawBody)).digest('hex');
+      if (incoming !== expected) {
+        console.warn('⚠️ Flowix webhook signature mismatch!');
+      }
+    } catch (sigErr) {
+      console.error('Signature check error:', sigErr);
+    }
+  }
+
+  const data = rawBody?.data || rawBody;
+  const reffId = data?.reff_id || data?.order_id;
+  const incomingStatus = String(data?.status || '').toLowerCase();
+
+  if (!reffId) {
+    return res.status(400).json({ error: 'Reff ID tidak ditemukan' });
+  }
+
+  const localTopup = (db.topups || []).find(t => t.id === reffId || t.reffId === reffId);
+  if (!localTopup) {
+    return res.status(404).json({ error: 'Transaksi tidak ditemukan' });
+  }
+
+  if (localTopup.status === 'Approved') {
+    return res.status(200).json({ success: true, message: 'Already completed' });
+  }
+
+  if (incomingStatus === 'success' || incomingStatus === 'paid') {
+    localTopup.status = 'Approved';
+    localTopup.approvedAt = new Date().toISOString();
+    const user = db.users.find(u => u.id === localTopup.userId);
+    if (user) {
+      user.balance += localTopup.amount;
+      console.log(`✅ [FLOWIX AUTO] Saldo User ${user.username} bertambah Rp ${localTopup.amount.toLocaleString()} (Reff: ${reffId})`);
+    }
+    saveDB(db);
+  } else if (incomingStatus === 'expired' || incomingStatus === 'canceled' || incomingStatus === 'failed') {
+    localTopup.status = 'Rejected';
+    localTopup.rejectedAt = new Date().toISOString();
+    saveDB(db);
+  }
+
+  return res.status(200).json({ success: true });
+});
+app.get('/api/topup/check-pakasir/:topupId', async (req, res) => {
+  const { topupId } = req.params;
+  const db = getDB();
+  const item = (db.topups || []).find(t => t.id === topupId);
+
+  if (!item) {
+    return res.status(404).json({ success: false, message: 'Data deposit tidak ditemukan.' });
+  }
+
+  if (item.status === 'Approved') {
+    return res.json({ success: true, status: 'Approved', message: 'Pembayaran sudah lunas dan saldo sudah masuk!' });
+  }
+
+  const project = db.settings?.pakasirProject || process.env.PAKASIR_PROJECT;
+  const apiKey = db.settings?.pakasirApiKey || process.env.PAKASIR_API_KEY;
+
+  if (!project || !apiKey) {
+    return res.status(400).json({ success: false, message: 'Gateway Pakasir belum disetup di admin.' });
+  }
+
+  try {
+    const detailUrl = `${PAKASIR_BASE}/transactiondetail?project=${project}&order_id=${topupId}&amount=${item.amount}&api_key=${apiKey}`;
+    const response = await fetch(detailUrl);
+    const detail = await response.json();
+
+    const verifiedStatus = detail.transaction?.status;
+
+    if (verifiedStatus === 'completed') {
+      item.status = 'Approved';
+      item.approvedAt = new Date().toISOString();
+      const user = db.users.find(u => u.id === item.userId);
+      if (user) {
+        user.balance += item.amount;
+      }
+      saveDB(db);
+
+      return res.json({
+        success: true,
+        status: 'Approved',
+        message: '🎉 Pembayaran terverifikasi lunas! Saldo berhasil ditambahkan otomatis.',
+        newBalance: user ? user.balance : undefined
+      });
+    } else if (verifiedStatus === 'expired' || verifiedStatus === 'cancelled') {
+      item.status = 'Rejected';
+      item.rejectedAt = new Date().toISOString();
+      saveDB(db);
+      return res.json({ success: false, status: 'Rejected', message: 'Transaksi telah kedaluwarsa atau dibatalkan.' });
+    }
+
+    return res.json({
+      success: true,
+      status: item.status,
+      message: 'Menunggu pembayaran dari Anda...'
+    });
+  } catch (err) {
+    console.error('Check pakasir error:', err);
+    return res.status(500).json({ success: false, message: 'Gagal memeriksa status ke Pakasir.' });
+  }
+});
+
+// 8.2 Webhook Pakasir (Otomatis instan callback dari Pakasir)
+app.post('/webhook/pakasir', async (req, res) => {
+  const { order_id, project, amount, status } = req.body;
+  const db = getDB();
+
+  const configuredProject = db.settings?.pakasirProject || process.env.PAKASIR_PROJECT;
+  const apiKey = db.settings?.pakasirApiKey || process.env.PAKASIR_API_KEY;
+
+  if (!configuredProject || project !== configuredProject) {
+    return res.status(400).json({ error: 'Project slug tidak cocok!' });
+  }
+
+  const localTopup = (db.topups || []).find(t => t.id === order_id);
+  if (!localTopup) {
+    return res.status(404).json({ error: 'Transaksi tidak ditemukan di database lokal' });
+  }
+
+  // Idempoten: Jika sudah di-approve sebelumnya
+  if (localTopup.status === 'Approved') {
+    return res.status(200).json({ received: true, message: 'Already completed' });
+  }
+
+  try {
+    // Verifikasi ganda langsung ke API Pakasir
+    const detailUrl = `${PAKASIR_BASE}/transactiondetail?project=${configuredProject}&order_id=${order_id}&amount=${localTopup.amount}&api_key=${apiKey}`;
+    const detailRes = await fetch(detailUrl);
+    const detail = await detailRes.json();
+
+    const verifiedStatus = detail.transaction?.status;
+    if (!detailRes.ok || !verifiedStatus) {
+      console.error('Webhook double-check fail:', detail);
+      return res.status(502).json({ error: 'Gagal memverifikasi transaksi ke server Pakasir' });
+    }
+
+    if (verifiedStatus === 'completed') {
+      localTopup.status = 'Approved';
+      localTopup.approvedAt = new Date().toISOString();
+      
+      const user = db.users.find(u => u.id === localTopup.userId);
+      if (user) {
+        user.balance += localTopup.amount;
+        console.log(`✅ [PAKASIR AUTO] Saldo User ${user.username} bertambah Rp ${localTopup.amount.toLocaleString()} (Order: ${order_id})`);
+      }
+      saveDB(db);
+    } else if (verifiedStatus === 'expired' || verifiedStatus === 'cancelled') {
+      localTopup.status = 'Rejected';
+      localTopup.rejectedAt = new Date().toISOString();
+      saveDB(db);
+    }
+
+    return res.status(200).json({ received: true, status: verifiedStatus });
+  } catch (err) {
+    console.error('Webhook Pakasir error:', err);
+    return res.status(500).json({ error: 'Internal webhook error' });
+  }
 });
 
 // 9. Upload Proof Topup
@@ -578,23 +1055,34 @@ app.get('/api/admin/all-data', checkAdmin, (req, res) => {
   });
 });
 
-// Admin Save Settings (Domain Panel, Contact, Site Info, Broadcast Text)
+// Admin Save Settings (Domain Panel, Contact, Site Info, Pakasir API, Flowix API, Broadcast Text)
 app.post('/api/admin/settings/save', checkAdmin, (req, res) => {
-  const { siteName, siteTagline, pteroDomain, pteroApiKey, contactWa, announcementText } = req.body;
+  const {
+    siteName, siteTagline, pteroDomain, pteroApiKey, contactWa, announcementText,
+    pakasirProject, pakasirApiKey, pakasirAutoActive,
+    flowixApiKey, flowixMerchantId, flowixWebhookSecret, flowixAutoActive
+  } = req.body;
   const db = getDB();
 
   db.settings = {
     ...db.settings,
-    siteName: siteName || db.settings.siteName,
-    siteTagline: siteTagline || db.settings.siteTagline,
-    pteroDomain: pteroDomain || db.settings.pteroDomain,
-    pteroApiKey: pteroApiKey || db.settings.pteroApiKey,
-    contactWa: contactWa || db.settings.contactWa,
-    announcementText: announcementText || db.settings.announcementText
+    siteName: siteName !== undefined ? siteName : db.settings.siteName,
+    siteTagline: siteTagline !== undefined ? siteTagline : db.settings.siteTagline,
+    pteroDomain: pteroDomain !== undefined ? pteroDomain : db.settings.pteroDomain,
+    pteroApiKey: pteroApiKey !== undefined ? pteroApiKey : db.settings.pteroApiKey,
+    contactWa: contactWa !== undefined ? contactWa : db.settings.contactWa,
+    announcementText: announcementText !== undefined ? announcementText : db.settings.announcementText,
+    pakasirProject: pakasirProject !== undefined ? pakasirProject.trim() : (db.settings.pakasirProject || ''),
+    pakasirApiKey: pakasirApiKey !== undefined ? pakasirApiKey.trim() : (db.settings.pakasirApiKey || ''),
+    pakasirAutoActive: pakasirAutoActive !== undefined ? !!pakasirAutoActive : (db.settings.pakasirAutoActive ?? true),
+    flowixApiKey: flowixApiKey !== undefined ? flowixApiKey.trim() : (db.settings.flowixApiKey || ''),
+    flowixMerchantId: flowixMerchantId !== undefined ? flowixMerchantId.trim() : (db.settings.flowixMerchantId || ''),
+    flowixWebhookSecret: flowixWebhookSecret !== undefined ? flowixWebhookSecret.trim() : (db.settings.flowixWebhookSecret || ''),
+    flowixAutoActive: flowixAutoActive !== undefined ? !!flowixAutoActive : (db.settings.flowixAutoActive ?? true)
   };
 
   saveDB(db);
-  return res.json({ success: true, message: 'Pengaturan website & panel berhasil disimpan!', settings: db.settings });
+  return res.json({ success: true, message: 'Pengaturan website, panel, Pakasir & Flowix Gateway berhasil disimpan!', settings: db.settings });
 });
 
 // Admin Approve / Reject Topup

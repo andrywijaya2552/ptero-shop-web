@@ -448,20 +448,57 @@ async function loadUserServers() {
   }
 }
 
+let currentPakasirOrder = null;
+let pakasirPollTimer = null;
+
 // Top Up Saldo
 function populatePaymentSelect() {
   const sel = document.getElementById('topupPaymentSelect');
   if (!sel) return;
-  sel.innerHTML = currentPayments.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+
+  const options = [];
+  // Pilihan Otomatis Pakasir
+  options.push(`<option value="pakasir" class="text-emerald-400 font-bold">⚡ Pakasir Gateway Otomatis (QRIS & VA)</option>`);
+  
+  // Pilihan Otomatis Flowix (flowix.web.id)
+  options.push(`<option value="flowix" class="text-blue-400 font-bold">⚡ Flowix Gateway Otomatis (QRIS & Virtual Account)</option>`);
+
+  // Pilihan Transfer Manual yang sudah ada
+  currentPayments.forEach(p => {
+    options.push(`<option value="${p.id}">${p.name} (Manual)</option>`);
+  });
+
+  sel.innerHTML = options.join('');
   handlePaymentChange();
 }
 
 function handlePaymentChange() {
   const selId = document.getElementById('topupPaymentSelect').value;
-  const p = currentPayments.find(item => item.id === selId);
+  const pakasirSub = document.getElementById('pakasirSubOptions');
+  const flowixSub = document.getElementById('flowixSubOptions');
+  const payInfoBox = document.getElementById('paymentInstructionBox');
   const qrContainer = document.getElementById('payQrContainer');
   const qrImg = document.getElementById('payQrImg');
 
+  if (selId === 'pakasir') {
+    if (pakasirSub) pakasirSub.classList.remove('hidden');
+    if (flowixSub) flowixSub.classList.add('hidden');
+    if (payInfoBox) payInfoBox.classList.add('hidden');
+    return;
+  }
+
+  if (selId === 'flowix') {
+    if (flowixSub) flowixSub.classList.remove('hidden');
+    if (pakasirSub) pakasirSub.classList.add('hidden');
+    if (payInfoBox) payInfoBox.classList.add('hidden');
+    return;
+  }
+
+  if (pakasirSub) pakasirSub.classList.add('hidden');
+  if (flowixSub) flowixSub.classList.add('hidden');
+  if (payInfoBox) payInfoBox.classList.remove('hidden');
+
+  const p = currentPayments.find(item => item.id === selId);
   if (!p) return;
   document.getElementById('payAccName').innerText = `Atas Nama: ${p.accountName}`;
   document.getElementById('payAccNumber').innerText = `Nomor/Akun: ${p.accountNumber}`;
@@ -475,6 +512,10 @@ function handlePaymentChange() {
   }
 }
 
+function handlePakasirChannelChange() {
+  // Real-time selector helper
+}
+
 async function handleRequestTopup(e) {
   e.preventDefault();
   if (!currentUser) {
@@ -484,8 +525,17 @@ async function handleRequestTopup(e) {
   }
 
   const paymentId = document.getElementById('topupPaymentSelect').value;
-  const amount = document.getElementById('topupAmount').value;
+  const amount = parseInt(document.getElementById('topupAmount').value, 10);
   const notes = document.getElementById('topupNotes').value;
+
+  let method = 'qris';
+  if (paymentId === 'pakasir') {
+    const checkedRadio = document.querySelector('input[name="pakasirChannel"]:checked');
+    if (checkedRadio) method = checkedRadio.value;
+  } else if (paymentId === 'flowix') {
+    const checkedRadio = document.querySelector('input[name="flowixChannel"]:checked');
+    if (checkedRadio) method = checkedRadio.value;
+  }
 
   try {
     const res = await fetch('/api/topup/request', {
@@ -494,7 +544,7 @@ async function handleRequestTopup(e) {
         'Content-Type': 'application/json',
         'x-user-id': currentUser.id
       },
-      body: JSON.stringify({ paymentId, amount, notes })
+      body: JSON.stringify({ paymentId, amount, notes, method })
     });
     const data = await res.json();
     if (data.success) {
@@ -502,12 +552,107 @@ async function handleRequestTopup(e) {
       document.getElementById('topupForm').reset();
       handlePaymentChange();
       loadUserTopups();
+
+      // Jika menggunakan gateway otomatis, tampilkan modal QRIS / VA
+      if (data.isAutoGateway && data.topup) {
+        openPakasirPaymentModal(data.topup);
+      }
     } else {
       showToast(data.message, 'error');
     }
   } catch (err) {
-    showToast('Gagal membuat tiket deposit.', 'error');
+    showToast('Gagal membuat transaksi deposit.', 'error');
   }
+}
+
+function openPakasirPaymentModal(topup) {
+  currentPakasirOrder = topup;
+  document.getElementById('pksOrderId').innerText = topup.id;
+  document.getElementById('pksTotalPay').innerText = formatRupiah(topup.totalPay);
+  document.getElementById('pksMethodBadge').innerText = topup.gatewayMethod ? topup.gatewayMethod.toUpperCase() : 'QRIS';
+  document.getElementById('pksDirectPayLink').href = topup.paymentUrl || '#';
+  document.getElementById('pksLiveStatus').innerText = 'Menunggu Pembayaran...';
+  document.getElementById('pksLiveStatus').className = 'font-bold text-amber-400';
+
+  const qrBox = document.getElementById('pksQrBox');
+  const vaBox = document.getElementById('pksVaBox');
+
+  if (topup.gatewayMethod === 'bni_va' || topup.gatewayMethod === 'bri_va') {
+    qrBox.classList.add('hidden');
+    vaBox.classList.remove('hidden');
+    document.getElementById('pksVaNumber').innerText = topup.paymentNumber || '-';
+    document.getElementById('pakasirModalSubtitle').innerText = `Silakan transfer ke nomor Virtual Account ${topup.gatewayMethod.toUpperCase()} di bawah`;
+  } else {
+    // QRIS
+    qrBox.classList.remove('hidden');
+    vaBox.classList.add('hidden');
+    document.getElementById('pakasirModalSubtitle').innerText = 'Scan kode QRIS di bawah melalui E-Wallet (DANA, Gopay, OVO, ShopeePay) atau Mobile Banking (BCA, Mandiri, BRI, BNI)';
+    
+    // Gunakan Data URL lokal beresolusi tinggi jika ada, atau fallback ke QR render
+    if (topup.qrDataUrl) {
+      document.getElementById('pksQrImage').src = topup.qrDataUrl;
+    } else if (topup.paymentNumber) {
+      let qrisString = topup.paymentNumber;
+      const idx = qrisString.indexOf('000201');
+      if (idx > 0) qrisString = qrisString.substring(idx);
+      document.getElementById('pksQrImage').src = `https://api.qrserver.com/v1/create-qr-code/?size=450x450&margin=10&data=${encodeURIComponent(qrisString)}`;
+    }
+  }
+
+  openModal('modalPakasirPay');
+
+  // Mulai Polling Otomatis tiap 4 detik
+  if (pakasirPollTimer) clearInterval(pakasirPollTimer);
+  pakasirPollTimer = setInterval(async () => {
+    if (!currentPakasirOrder || currentPakasirOrder.id !== topup.id) {
+      clearInterval(pakasirPollTimer);
+      return;
+    }
+    const isSuccess = await checkPakasirStatus(topup.id, false);
+    if (isSuccess) {
+      clearInterval(pakasirPollTimer);
+    }
+  }, 4000);
+}
+
+async function checkPakasirStatus(topupId, isManualAlert = false) {
+  try {
+    const isFlowix = topupId.startsWith('DEP-FLX');
+    const endpoint = isFlowix ? `/api/topup/check-flowix/${topupId}` : `/api/topup/check-pakasir/${topupId}`;
+    const res = await fetch(endpoint);
+    const data = await res.json();
+
+    if (data.status === 'Approved') {
+      document.getElementById('pksLiveStatus').innerText = '✅ Pembayaran Lunas!';
+      document.getElementById('pksLiveStatus').className = 'font-bold text-emerald-400';
+      showToast('🎉 Pembayaran Berhasil! Saldo telah ditambahkan ke akun Anda.', 'success');
+      syncUserProfile();
+      loadUserTopups();
+      setTimeout(() => {
+        closeModal('modalPakasirPay');
+      }, 2500);
+      return true;
+    } else if (data.status === 'Rejected') {
+      document.getElementById('pksLiveStatus').innerText = '❌ Transaksi Dibatalkan/Expired';
+      document.getElementById('pksLiveStatus').className = 'font-bold text-red-400';
+      if (isManualAlert) showToast('Transaksi ini sudah kedaluwarsa atau dibatalkan.', 'error');
+      return true;
+    } else {
+      if (isManualAlert) showToast('Menunggu pembayaran dari Anda...', 'info');
+      return false;
+    }
+  } catch (err) {
+    if (isManualAlert) showToast('Gagal memeriksa status pembayaran.', 'error');
+    return false;
+  }
+}
+
+async function checkPakasirStatusManual() {
+  if (!currentPakasirOrder) return;
+  const btn = document.getElementById('pksCheckBtn');
+  btn.innerHTML = `<i class="ri-loader-4-line animate-spin"></i> Memeriksa...`;
+  await checkPakasirStatus(currentPakasirOrder.id, true);
+  btn.innerHTML = `<i class="ri-refresh-line"></i> Cek Status Pembayaran Sekarang`;
 }
 
 async function loadUserTopups() {
@@ -525,20 +670,33 @@ async function loadUserTopups() {
       }
 
       container.innerHTML = data.topups.map(t => {
+        const isPakasir = t.gateway === 'pakasir';
         return `
           <div class="p-3.5 rounded-xl bg-gray-900 border border-gray-800 text-xs space-y-2">
             <div class="flex justify-between items-center">
-              <span class="font-mono font-bold text-cyan-300">${t.id}</span>
+              <span class="font-mono font-bold text-cyan-300 flex items-center gap-1">
+                ${isPakasir ? '<i class="ri-flashlight-fill text-emerald-400"></i>' : ''} ${t.id}
+              </span>
               <span class="px-2 py-0.5 rounded-full font-bold text-[10px] ${t.status === 'Approved' ? 'bg-emerald-500/20 text-emerald-400' : (t.status === 'Rejected' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400')}">${t.status}</span>
             </div>
             <div class="flex justify-between text-gray-300">
-              <span>Metode: ${t.paymentMethod}</span>
+              <span>Metode: <strong class="text-white">${t.paymentMethod}</strong></span>
               <span class="font-bold text-white">Nominal: ${formatRupiah(t.amount)}</span>
             </div>
             <div class="flex justify-between items-center bg-gray-950 p-2 rounded-lg border border-gray-800">
-              <span class="text-gray-400 text-[11px]">Total Ditransfer (Kode Unik):</span>
+              <span class="text-gray-400 text-[11px]">${isPakasir ? 'Total Bayar (Pakasir):' : 'Total Ditransfer (Kode Unik):'}</span>
               <span class="font-mono font-black text-emerald-400 text-sm">${formatRupiah(t.totalPay)}</span>
             </div>
+            ${isPakasir && t.status === 'Pending' ? `
+              <div class="flex gap-2 pt-1">
+                <button onclick='openPakasirPaymentModal(${JSON.stringify(t)})' class="flex-1 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black font-bold rounded-lg text-[11px] flex items-center justify-center gap-1 transition">
+                  <i class="ri-qr-code-line"></i> Buka Pembayaran
+                </button>
+                <button onclick="checkPakasirStatus('${t.id}', true)" class="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-200 font-bold rounded-lg text-[11px] transition">
+                  <i class="ri-refresh-line"></i> Cek
+                </button>
+              </div>
+            ` : ''}
           </div>
         `;
       }).join('');
@@ -591,6 +749,24 @@ async function loadAdminData() {
         document.getElementById('settingPteroApiKey').value = data.settings.pteroApiKey || '';
         document.getElementById('settingContactWa').value = data.settings.contactWa || '';
         document.getElementById('settingAnnouncement').value = data.settings.announcementText || '';
+        if (document.getElementById('settingPakasirProject')) {
+          document.getElementById('settingPakasirProject').value = data.settings.pakasirProject || '';
+        }
+        if (document.getElementById('settingPakasirApiKey')) {
+          document.getElementById('settingPakasirApiKey').value = data.settings.pakasirApiKey || '';
+        }
+        if (document.getElementById('displayWebhookUrl')) {
+          document.getElementById('displayWebhookUrl').innerText = `${window.location.origin}/webhook/pakasir`;
+        }
+        if (document.getElementById('settingFlowixApiKey')) {
+          document.getElementById('settingFlowixApiKey').value = data.settings.flowixApiKey || 'sk-d2e1f23c-817d343e328c-a8fe474da8a3';
+        }
+        if (document.getElementById('settingFlowixMerchantId')) {
+          document.getElementById('settingFlowixMerchantId').value = data.settings.flowixMerchantId || '';
+        }
+        if (document.getElementById('displayFlowixWebhookUrl')) {
+          document.getElementById('displayFlowixWebhookUrl').innerText = `${window.location.origin}/webhook/flowix`;
+        }
       }
 
       renderAdminTopups(data.topups || []);
@@ -841,6 +1017,10 @@ async function handleSaveSettings(e) {
   const pteroApiKey = document.getElementById('settingPteroApiKey').value.trim();
   const contactWa = document.getElementById('settingContactWa').value.trim();
   const announcementText = document.getElementById('settingAnnouncement').value.trim();
+  const pakasirProject = document.getElementById('settingPakasirProject') ? document.getElementById('settingPakasirProject').value.trim() : '';
+  const pakasirApiKey = document.getElementById('settingPakasirApiKey') ? document.getElementById('settingPakasirApiKey').value.trim() : '';
+  const flowixApiKey = document.getElementById('settingFlowixApiKey') ? document.getElementById('settingFlowixApiKey').value.trim() : '';
+  const flowixMerchantId = document.getElementById('settingFlowixMerchantId') ? document.getElementById('settingFlowixMerchantId').value.trim() : '';
 
   try {
     const res = await fetch('/api/admin/settings/save', {
@@ -849,7 +1029,18 @@ async function handleSaveSettings(e) {
         'Content-Type': 'application/json',
         'x-user-id': currentUser.id
       },
-      body: JSON.stringify({ siteName, siteTagline, pteroDomain, pteroApiKey, contactWa, announcementText })
+      body: JSON.stringify({
+        siteName,
+        siteTagline,
+        pteroDomain,
+        pteroApiKey,
+        contactWa,
+        announcementText,
+        pakasirProject,
+        pakasirApiKey,
+        flowixApiKey,
+        flowixMerchantId
+      })
     });
     const data = await res.json();
     if (data.success) {

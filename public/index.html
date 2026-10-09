@@ -335,6 +335,52 @@
               </select>
             </div>
 
+            <!-- Detail Pakasir Method Options (Jika Pakasir dipilih) -->
+            <div id="pakasirSubOptions" class="hidden p-3 rounded-xl bg-emerald-950/20 border border-emerald-500/30 space-y-2">
+              <label class="block text-xs font-bold text-emerald-400">Pilih Saluran Pembayaran Pakasir:</label>
+              <div class="grid grid-cols-3 gap-2">
+                <label class="cursor-pointer border border-gray-700 hover:border-emerald-500 p-2.5 rounded-xl bg-gray-900 flex flex-col items-center justify-center text-center transition">
+                  <input type="radio" name="pakasirChannel" value="qris" checked class="hidden peer" onchange="handlePakasirChannelChange()">
+                  <i class="ri-qr-code-line text-lg text-cyan-400 peer-checked:text-emerald-400"></i>
+                  <span class="text-[11px] font-bold text-gray-300 mt-1 peer-checked:text-emerald-300">QRIS Instant</span>
+                </label>
+                <label class="cursor-pointer border border-gray-700 hover:border-emerald-500 p-2.5 rounded-xl bg-gray-900 flex flex-col items-center justify-center text-center transition">
+                  <input type="radio" name="pakasirChannel" value="bni_va" class="hidden peer" onchange="handlePakasirChannelChange()">
+                  <i class="ri-bank-card-line text-lg text-cyan-400 peer-checked:text-emerald-400"></i>
+                  <span class="text-[11px] font-bold text-gray-300 mt-1 peer-checked:text-emerald-300">BNI VA</span>
+                </label>
+                <label class="cursor-pointer border border-gray-700 hover:border-emerald-500 p-2.5 rounded-xl bg-gray-900 flex flex-col items-center justify-center text-center transition">
+                  <input type="radio" name="pakasirChannel" value="bri_va" class="hidden peer" onchange="handlePakasirChannelChange()">
+                  <i class="ri-bank-line text-lg text-cyan-400 peer-checked:text-emerald-400"></i>
+                  <span class="text-[11px] font-bold text-gray-300 mt-1 peer-checked:text-emerald-300">BRI VA</span>
+                </label>
+              </div>
+              <p class="text-[10px] text-gray-400 italic">⚡ Pembayaran otomatis diverifikasi sistem dalam hitungan detik tanpa perlu upload bukti.</p>
+            </div>
+
+            <!-- Detail Flowix Method Options (Jika Flowix dipilih) -->
+            <div id="flowixSubOptions" class="hidden p-3 rounded-xl bg-blue-950/30 border border-blue-500/30 space-y-2">
+              <label class="block text-xs font-bold text-blue-400">Pilih Saluran Pembayaran Flowix:</label>
+              <div class="grid grid-cols-3 gap-2">
+                <label class="cursor-pointer border border-gray-700 hover:border-blue-500 p-2.5 rounded-xl bg-gray-900 flex flex-col items-center justify-center text-center transition">
+                  <input type="radio" name="flowixChannel" value="QRIS" checked class="hidden peer">
+                  <i class="ri-qr-code-line text-lg text-cyan-400 peer-checked:text-blue-400"></i>
+                  <span class="text-[11px] font-bold text-gray-300 mt-1 peer-checked:text-blue-300">QRIS Flowix</span>
+                </label>
+                <label class="cursor-pointer border border-gray-700 hover:border-blue-500 p-2.5 rounded-xl bg-gray-900 flex flex-col items-center justify-center text-center transition">
+                  <input type="radio" name="flowixChannel" value="BCAVA" class="hidden peer">
+                  <i class="ri-bank-card-line text-lg text-cyan-400 peer-checked:text-blue-400"></i>
+                  <span class="text-[11px] font-bold text-gray-300 mt-1 peer-checked:text-blue-300">BCA VA</span>
+                </label>
+                <label class="cursor-pointer border border-gray-700 hover:border-blue-500 p-2.5 rounded-xl bg-gray-900 flex flex-col items-center justify-center text-center transition">
+                  <input type="radio" name="flowixChannel" value="MANDIRIVA" class="hidden peer">
+                  <i class="ri-bank-line text-lg text-cyan-400 peer-checked:text-blue-400"></i>
+                  <span class="text-[11px] font-bold text-gray-300 mt-1 peer-checked:text-blue-300">Mandiri VA</span>
+                </label>
+              </div>
+              <p class="text-[10px] text-gray-400 italic">⚡ Gateway Flowix (flowix.web.id) - Saldo langsung masuk otomatis.</p>
+            </div>
+
             <!-- Detail Info Rekening & QRIS -->
             <div id="paymentInstructionBox" class="p-4 rounded-xl bg-gray-900/80 border border-gray-800 space-y-2 text-xs">
               <div class="flex justify-between items-center text-gray-300">
@@ -350,8 +396,8 @@
 
             <!-- Nominal Deposit -->
             <div>
-              <label class="block text-xs font-semibold text-gray-300 mb-1.5">Nominal Deposit (Min Rp 3.000)</label>
-              <input type="number" id="topupAmount" min="3000" step="1000" required placeholder="Contoh: 15000" class="w-full bg-gray-900 border border-gray-700 rounded-xl px-4 py-2.5 text-sm text-white focus:border-cyan-500 outline-none transition font-mono">
+              <label class="block text-xs font-semibold text-gray-300 mb-1.5">Nominal Deposit (Min Rp 75)</label>
+              <input type="number" id="topupAmount" min="75" step="1" required placeholder="Contoh: 1000" class="w-full bg-gray-900 border border-gray-700 rounded-xl px-4 py-2.5 text-sm text-white focus:border-cyan-500 outline-none transition font-mono">
             </div>
 
             <!-- Catatan Pengirim -->
@@ -578,6 +624,54 @@
               <div>
                 <label class="block text-xs font-semibold text-cyan-300 mb-1">Pterodactyl Application API Key (Opsional)</label>
                 <input type="text" id="settingPteroApiKey" placeholder="ptla_xxxxxxxxxxxxxxxxxxxxx" class="w-full bg-gray-900 border border-gray-700 rounded-xl px-3.5 py-2 text-xs text-white focus:border-cyan-500 outline-none font-mono">
+              </div>
+            </div>
+
+            <!-- Konfigurasi Pakasir Payment Gateway -->
+            <div class="p-4 rounded-xl bg-emerald-950/20 border border-emerald-500/30 space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                  <i class="ri-secure-payment-line text-sm"></i> Integrasi Gateway Otomatis Pakasir (QRIS & VA)
+                </span>
+                <span class="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-mono">app.pakasir.com</span>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-semibold text-emerald-300 mb-1">Project Slug Pakasir</label>
+                  <input type="text" id="settingPakasirProject" placeholder="contoh: pterostore" class="w-full bg-gray-900 border border-gray-700 rounded-xl px-3.5 py-2 text-xs text-white focus:border-emerald-500 outline-none font-mono">
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-emerald-300 mb-1">API Key Project Pakasir</label>
+                  <input type="password" id="settingPakasirApiKey" placeholder="API Key dari Dashboard Pakasir" class="w-full bg-gray-900 border border-gray-700 rounded-xl px-3.5 py-2 text-xs text-white focus:border-emerald-500 outline-none font-mono">
+                </div>
+              </div>
+              <div class="p-2.5 bg-gray-950 rounded-lg border border-gray-800 text-[11px] text-gray-400">
+                <p class="font-semibold text-gray-300 mb-0.5">Webhook URL untuk didaftarkan di dashboard Pakasir:</p>
+                <code id="displayWebhookUrl" class="text-emerald-400 font-mono select-all">https://domain-anda.com/webhook/pakasir</code>
+              </div>
+            </div>
+
+            <!-- Konfigurasi Flowix Payment Gateway -->
+            <div class="p-4 rounded-xl bg-blue-950/30 border border-blue-500/30 space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-blue-400 flex items-center gap-1.5">
+                  <i class="ri-flashlight-fill text-sm"></i> Integrasi Gateway Otomatis Flowix (flowix.web.id)
+                </span>
+                <span class="text-[10px] bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded font-mono">flowix.web.id</span>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-semibold text-blue-300 mb-1">Flowix API Key</label>
+                  <input type="text" id="settingFlowixApiKey" placeholder="sk-d2e1f23c-817d343e328c-a8fe474da8a3" class="w-full bg-gray-900 border border-gray-700 rounded-xl px-3.5 py-2 text-xs text-white focus:border-blue-500 outline-none font-mono">
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-blue-300 mb-1">Flowix Merchant ID (Opsional)</label>
+                  <input type="text" id="settingFlowixMerchantId" placeholder="Merchant ID Flowix" class="w-full bg-gray-900 border border-gray-700 rounded-xl px-3.5 py-2 text-xs text-white focus:border-blue-500 outline-none font-mono">
+                </div>
+              </div>
+              <div class="p-2.5 bg-gray-950 rounded-lg border border-gray-800 text-[11px] text-gray-400">
+                <p class="font-semibold text-gray-300 mb-0.5">Webhook URL untuk didaftarkan di dashboard Flowix:</p>
+                <code id="displayFlowixWebhookUrl" class="text-blue-400 font-mono select-all">https://domain-anda.com/webhook/flowix</code>
               </div>
             </div>
 
@@ -853,6 +947,71 @@
           Simpan Paket
         </button>
       </form>
+    </div>
+  </div>
+
+  <!-- Modal Checkout / Bayar Pakasir -->
+  <div id="modalPakasirPay" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="glass-card max-w-md w-full rounded-2xl p-6 border border-emerald-500/40 shadow-2xl relative">
+      <button onclick="closeModal('modalPakasirPay')" class="absolute top-4 right-4 text-gray-400 hover:text-white text-lg">
+        <i class="ri-close-line"></i>
+      </button>
+
+      <div class="text-center mb-4">
+        <div class="w-12 h-12 rounded-xl bg-emerald-500/20 text-emerald-400 mx-auto flex items-center justify-center text-2xl mb-2">
+          <i class="ri-qr-code-line"></i>
+        </div>
+        <h3 class="text-lg font-bold text-white">Pembayaran Gateway Pakasir</h3>
+        <p class="text-xs text-gray-400" id="pakasirModalSubtitle">Scan QRIS atau transfer ke nomor VA berikut</p>
+      </div>
+
+      <div class="bg-gray-900/90 rounded-xl p-4 border border-gray-800 space-y-3">
+        <div class="flex justify-between items-center text-xs">
+          <span class="text-gray-400">ID Transaksi:</span>
+          <span id="pksOrderId" class="font-mono font-bold text-cyan-400">DEP-PKS-XXXX</span>
+        </div>
+        <div class="flex justify-between items-center text-xs">
+          <span class="text-gray-400">Total Tagihan:</span>
+          <span id="pksTotalPay" class="font-mono font-black text-emerald-400 text-base">Rp 0</span>
+        </div>
+        <div class="flex justify-between items-center text-xs">
+          <span class="text-gray-400">Metode:</span>
+          <span id="pksMethodBadge" class="px-2 py-0.5 rounded font-bold uppercase text-[10px] bg-cyan-500/20 text-cyan-400">QRIS</span>
+        </div>
+
+        <!-- Tampilan QRIS -->
+        <div id="pksQrBox" class="text-center py-2 border-t border-gray-800">
+          <div class="inline-block p-3 bg-white rounded-2xl shadow-xl">
+            <img id="pksQrImage" src="" alt="Pakasir QRIS" class="w-56 h-56 mx-auto block object-contain">
+          </div>
+          <span class="text-[11px] text-gray-300 block mt-2 font-medium">Mendukung Semua Pembayaran QRIS:</span>
+          <span class="text-[10px] text-emerald-400 font-semibold block">DANA • GoPay • OVO • ShopeePay • LinkAja • BCA • Mandiri • BRI • BNI</span>
+        </div>
+
+        <!-- Tampilan Nomor VA (Jika VA) -->
+        <div id="pksVaBox" class="hidden text-center py-3 border-t border-gray-800 space-y-1">
+          <p class="text-xs text-gray-400">Nomor Virtual Account:</p>
+          <div class="flex items-center justify-center gap-2">
+            <span id="pksVaNumber" class="text-lg font-mono font-black text-amber-400 tracking-wider">1234567890</span>
+            <button onclick="copyToClipboard(document.getElementById('pksVaNumber').innerText)" class="px-2 py-1 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded text-xs">
+              <i class="ri-file-copy-line"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="p-2.5 rounded-lg bg-gray-950 border border-gray-800 text-[11px] text-gray-400 text-center">
+          Status: <span id="pksLiveStatus" class="font-bold text-amber-400">Menunggu Pembayaran...</span>
+        </div>
+      </div>
+
+      <div class="mt-4 space-y-2">
+        <a id="pksDirectPayLink" href="#" target="_blank" class="w-full py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-black font-extrabold rounded-xl text-xs flex items-center justify-center gap-2 transition">
+          <i class="ri-external-link-line"></i> Buka Halaman Bayar Pakasir
+        </a>
+        <button onclick="checkPakasirStatusManual()" id="pksCheckBtn" class="w-full py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5">
+          <i class="ri-refresh-line"></i> Cek Status Pembayaran Sekarang
+        </button>
+      </div>
     </div>
   </div>
 

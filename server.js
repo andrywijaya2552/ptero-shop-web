@@ -7,7 +7,8 @@ const QRCode = require('qrcode');
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+// Pterodactyl menyediakan env SERVER_PORT, PORT, atau WEB_PORT
+const PORT = process.env.SERVER_PORT || process.env.PORT || process.env.WEB_PORT || 3000;
 const DB_FILE = path.join(__dirname, 'database.json');
 const PAKASIR_BASE = 'https://app.pakasir.com/api';
 const FLOWIX_BASE = 'https://flowix.web.id/api/v1';
@@ -1214,7 +1215,16 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Binding ke 0.0.0.0 agar bisa diakses dari luar panel pterodactyl & IP publik
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`⚡ Pterodactyl Store Server berjalan di http://0.0.0.0:${PORT}`);
+// Error handling middleware global
+app.use((err, req, res, next) => {
+  console.error('Unhandled Error:', err);
+  res.status(500).json({ success: false, message: 'Internal Server Error' });
+});
+
+// Binding ke 0.0.0.0 agar bisa diakses dari luar panel pterodactyl, IP publik & subdomain
+app.listen(Number(PORT), '0.0.0.0', () => {
+  console.log(`=========================================`);
+  console.log(`🚀 PTERO STORE BERJALAN DI PORT : ${PORT}`);
+  console.log(`🌐 Buka di Browser: http://IP-SERVER:${PORT}`);
+  console.log(`=========================================`);
 });

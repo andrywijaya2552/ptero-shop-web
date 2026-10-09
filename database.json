@@ -12,7 +12,10 @@
     "flowixApiKey": "sk-d2e1f23c-817d343e328c-a8fe474da8a3",
     "flowixMerchantId": "MID-TAT2676",
     "flowixWebhookSecret": "whsec_bbe2272d8fe61101125903d59f7061c",
-    "flowixAutoActive": true
+    "flowixAutoActive": true,
+    "kaseraApiKey": "kp_live_6W-buSXtXoHnxeFKEKIbLuzRm-6hT-WQ_V73aC0GKkY",
+    "kaseraWebhookSecret": "",
+    "kaseraAutoActive": true
   },
   "users": [
     {

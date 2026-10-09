@@ -381,6 +381,44 @@
               <p class="text-[10px] text-gray-400 italic">⚡ Gateway Flowix (flowix.web.id) - Saldo langsung masuk otomatis.</p>
             </div>
 
+            <!-- Detail Kasera Pay Method Options (Jika Kasera dipilih) -->
+            <div id="kaseraSubOptions" class="hidden p-3 rounded-xl bg-purple-950/30 border border-purple-500/30 space-y-2">
+              <label class="block text-xs font-bold text-purple-400">Pilih Saluran Pembayaran Kasera Pay:</label>
+              <div class="grid grid-cols-3 gap-2">
+                <label class="cursor-pointer border border-gray-700 hover:border-purple-500 p-2.5 rounded-xl bg-gray-900 flex flex-col items-center justify-center text-center transition">
+                  <input type="radio" name="kaseraChannel" value="qris" checked class="hidden peer">
+                  <i class="ri-qr-code-line text-lg text-cyan-400 peer-checked:text-purple-400"></i>
+                  <span class="text-[11px] font-bold text-gray-300 mt-1 peer-checked:text-purple-300">QRIS</span>
+                </label>
+                <label class="cursor-pointer border border-gray-700 hover:border-purple-500 p-2.5 rounded-xl bg-gray-900 flex flex-col items-center justify-center text-center transition">
+                  <input type="radio" name="kaseraChannel" value="va_bri" class="hidden peer">
+                  <i class="ri-bank-card-line text-lg text-cyan-400 peer-checked:text-purple-400"></i>
+                  <span class="text-[11px] font-bold text-gray-300 mt-1 peer-checked:text-purple-300">BRI VA</span>
+                </label>
+                <label class="cursor-pointer border border-gray-700 hover:border-purple-500 p-2.5 rounded-xl bg-gray-900 flex flex-col items-center justify-center text-center transition">
+                  <input type="radio" name="kaseraChannel" value="va_bni" class="hidden peer">
+                  <i class="ri-bank-line text-lg text-cyan-400 peer-checked:text-purple-400"></i>
+                  <span class="text-[11px] font-bold text-gray-300 mt-1 peer-checked:text-purple-300">BNI VA</span>
+                </label>
+                <label class="cursor-pointer border border-gray-700 hover:border-purple-500 p-2.5 rounded-xl bg-gray-900 flex flex-col items-center justify-center text-center transition">
+                  <input type="radio" name="kaseraChannel" value="va_mandiri" class="hidden peer">
+                  <i class="ri-bank-line text-lg text-cyan-400 peer-checked:text-purple-400"></i>
+                  <span class="text-[11px] font-bold text-gray-300 mt-1 peer-checked:text-purple-300">Mandiri VA</span>
+                </label>
+                <label class="cursor-pointer border border-gray-700 hover:border-purple-500 p-2.5 rounded-xl bg-gray-900 flex flex-col items-center justify-center text-center transition">
+                  <input type="radio" name="kaseraChannel" value="va_permata" class="hidden peer">
+                  <i class="ri-bank-line text-lg text-cyan-400 peer-checked:text-purple-400"></i>
+                  <span class="text-[11px] font-bold text-gray-300 mt-1 peer-checked:text-purple-300">Permata VA</span>
+                </label>
+                <label class="cursor-pointer border border-gray-700 hover:border-purple-500 p-2.5 rounded-xl bg-gray-900 flex flex-col items-center justify-center text-center transition">
+                  <input type="radio" name="kaseraChannel" value="va_cimb" class="hidden peer">
+                  <i class="ri-bank-line text-lg text-cyan-400 peer-checked:text-purple-400"></i>
+                  <span class="text-[11px] font-bold text-gray-300 mt-1 peer-checked:text-purple-300">CIMB VA</span>
+                </label>
+              </div>
+              <p class="text-[10px] text-gray-400 italic">⚡ Gateway Kasera Pay (pay.kasera.id) - Min QRIS Rp 1.000 / VA Rp 10.000.</p>
+            </div>
+
             <!-- Detail Info Rekening & QRIS -->
             <div id="paymentInstructionBox" class="p-4 rounded-xl bg-gray-900/80 border border-gray-800 space-y-2 text-xs">
               <div class="flex justify-between items-center text-gray-300">
@@ -672,6 +710,30 @@
               <div class="p-2.5 bg-gray-950 rounded-lg border border-gray-800 text-[11px] text-gray-400">
                 <p class="font-semibold text-gray-300 mb-0.5">Webhook URL untuk didaftarkan di dashboard Flowix:</p>
                 <code id="displayFlowixWebhookUrl" class="text-blue-400 font-mono select-all">https://domain-anda.com/webhook/flowix</code>
+              </div>
+            </div>
+
+            <!-- Konfigurasi Kasera Pay Payment Gateway -->
+            <div class="p-4 rounded-xl bg-purple-950/30 border border-purple-500/30 space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-purple-400 flex items-center gap-1.5">
+                  <i class="ri-secure-payment-fill text-sm"></i> Integrasi Gateway Otomatis Kasera Pay (pay.kasera.id)
+                </span>
+                <span class="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded font-mono">pay.kasera.id</span>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-semibold text-purple-300 mb-1">Kasera API Key</label>
+                  <input type="text" id="settingKaseraApiKey" placeholder="kp_live_xxxxxxxx" class="w-full bg-gray-900 border border-gray-700 rounded-xl px-3.5 py-2 text-xs text-white focus:border-purple-500 outline-none font-mono">
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-purple-300 mb-1">Kasera Webhook Signing Secret (Opsional)</label>
+                  <input type="text" id="settingKaseraWebhookSecret" placeholder="whsec_xxxxxxxx (dari dashboard Kasera)" class="w-full bg-gray-900 border border-gray-700 rounded-xl px-3.5 py-2 text-xs text-white focus:border-purple-500 outline-none font-mono">
+                </div>
+              </div>
+              <div class="p-2.5 bg-gray-950 rounded-lg border border-gray-800 text-[11px] text-gray-400">
+                <p class="font-semibold text-gray-300 mb-0.5">Webhook URL untuk didaftarkan di dashboard Kasera Pay:</p>
+                <code id="displayKaseraWebhookUrl" class="text-purple-400 font-mono select-all">https://domain-anda.com/webhook/kasera</code>
               </div>
             </div>
 

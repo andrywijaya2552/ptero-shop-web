@@ -12,9 +12,15 @@ const PORT = process.env.SERVER_PORT || process.env.PORT || process.env.WEB_PORT
 const DB_FILE = path.join(__dirname, 'database.json');
 const PAKASIR_BASE = 'https://app.pakasir.com/api';
 const FLOWIX_BASE = 'https://flowix.web.id/api/v1';
+const KASERA_BASE = 'https://pay.kasera.id';
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({
+  verify: (req, res, buf) => {
+    // Simpan raw body untuk verifikasi signature webhook (Kasera, dll)
+    req.rawBody = buf.toString('utf8');
+  }
+}));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -133,7 +139,10 @@ function getDB() {
         flowixApiKey: process.env.FLOWIX_API_KEY || 'sk-d2e1f23c-817d343e328c-a8fe474da8a3',
         flowixMerchantId: process.env.FLOWIX_MERCHANT_ID || '',
         flowixWebhookSecret: process.env.FLOWIX_WEBHOOK_SECRET || '',
-        flowixAutoActive: true
+        flowixAutoActive: true,
+        kaseraApiKey: process.env.KASERA_API_KEY || 'kp_live_6W-buSXtXoHnxeFKEKIbLuzRm-6hT-WQ_V73aC0GKkY',
+        kaseraWebhookSecret: process.env.KASERA_WEBHOOK_SECRET || '',
+        kaseraAutoActive: true
       },
       users: [
         {
@@ -240,10 +249,13 @@ app.get('/api/public/info', (req, res) => {
   // Hide API Key from public response for security, but expose if Gateway is configured
   const hasPakasir = !!(db.settings?.pakasirProject && db.settings?.pakasirApiKey);
   const hasFlowix = !!(db.settings?.flowixApiKey || process.env.FLOWIX_API_KEY);
+  const hasKasera = !!(db.settings?.kaseraApiKey || process.env.KASERA_API_KEY);
   safeSettings.hasPakasir = hasPakasir;
   safeSettings.hasFlowix = hasFlowix;
+  safeSettings.hasKasera = hasKasera;
   safeSettings.pakasirAutoActive = db.settings?.pakasirAutoActive !== false;
   safeSettings.flowixAutoActive = db.settings?.flowixAutoActive !== false;
+  safeSettings.kaseraAutoActive = db.settings?.kaseraAutoActive !== false;
   if (safeSettings.pakasirApiKey) {
     safeSettings.pakasirApiKey = '***';
   }
@@ -252,6 +264,12 @@ app.get('/api/public/info', (req, res) => {
   }
   if (safeSettings.flowixWebhookSecret) {
     safeSettings.flowixWebhookSecret = '***';
+  }
+  if (safeSettings.kaseraApiKey) {
+    safeSettings.kaseraApiKey = '***';
+  }
+  if (safeSettings.kaseraWebhookSecret) {
+    safeSettings.kaseraWebhookSecret = '***';
   }
   if (safeSettings.pteroApiKey) {
     safeSettings.pteroApiKey = '***';
@@ -598,6 +616,128 @@ app.post('/api/topup/request', async (req, res) => {
       return res.status(500).json({ success: false, message: 'Terjadi gangguan jaringan saat menghubungi gateway Flowix.' });
     }
   }
+  // 1.3 JIKA METODE PEMBAYARAN KASERA PAY AUTO GATEWAY (pay.kasera.id)
+  if (paymentId === 'kasera' || paymentId === 'kasera-qris' || paymentId === 'kasera-va') {
+    const kaseraApiKey = db.settings?.kaseraApiKey || process.env.KASERA_API_KEY || 'kp_live_6W-buSXtXoHnxeFKEKIbLuzRm-6hT-WQ_V73aC0GKkY';
+
+    if (!kaseraApiKey) {
+      return res.status(400).json({
+        success: false,
+        message: 'Payment Gateway Kasera Pay belum dikonfigurasi oleh Admin. Silakan gunakan metode transfer manual atau hubungi admin.'
+      });
+    }
+
+    // Mapping kode metode Kasera Pay
+    const KASERA_METHODS = ['qris', 'va_bri', 'va_bni', 'va_mandiri', 'va_permata', 'va_cimb', 'va_danamon', 'va_maybank'];
+    const kaseraMethod = KASERA_METHODS.includes(String(method).toLowerCase()) ? String(method).toLowerCase() : 'qris';
+
+    const orderId = `DEP-KSR-${Date.now()}-${crypto.randomBytes(2).toString('hex')}`.toUpperCase();
+
+    try {
+      const body = {
+        amount: depAmount,
+        description: `Deposit Saldo ${db.settings?.siteName || 'Ptero Store'} - ${user.username}`,
+        external_id: orderId,
+        merchant_ref: user.id,
+        payment_methods: [kaseraMethod]
+      };
+
+      // Metode Virtual Account membutuhkan nama customer
+      if (kaseraMethod.startsWith('va_')) {
+        body.customer = { name: user.fullName || user.username };
+      }
+
+      const ksrRes = await fetch(`${KASERA_BASE}/v1/transactions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${kaseraApiKey}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': orderId
+        },
+        body: JSON.stringify(body)
+      });
+
+      const ksrData = await ksrRes.json().catch(() => null);
+
+      if (!ksrRes.ok || !ksrData || !ksrData.id) {
+        console.error('Kasera transaction error:', ksrData);
+        const errMsg = ksrData?.error?.message || 'Gagal membuat pembayaran via Kasera Pay.';
+        return res.status(502).json({
+          success: false,
+          message: `${errMsg} (Minimal QRIS Rp 1.000 / Virtual Account Rp 10.000)`,
+          detail: ksrData
+        });
+      }
+
+      const payment = ksrData.payment || {};
+      const totalPayment = ksrData.amount || depAmount;
+
+      // Ambil string QRIS / nomor VA
+      let paymentNumber = '';
+      if (payment.type === 'qr' && payment.qr_string) {
+        paymentNumber = payment.qr_string;
+      } else if (payment.type === 'payment_code' && payment.payment_code) {
+        paymentNumber = payment.payment_code;
+      }
+
+      let cleanedPaymentNumber = paymentNumber;
+      const qrisTagIdx = cleanedPaymentNumber.indexOf('000201');
+      if (qrisTagIdx > 0) {
+        cleanedPaymentNumber = cleanedPaymentNumber.substring(qrisTagIdx);
+      }
+
+      // Generate QR data URL beresolusi tinggi untuk tipe QR
+      let qrDataUrl = '';
+      if (payment.type === 'qr' && cleanedPaymentNumber) {
+        try {
+          qrDataUrl = await QRCode.toDataURL(cleanedPaymentNumber, {
+            errorCorrectionLevel: 'M',
+            margin: 3,
+            width: 450,
+            color: { dark: '#000000', light: '#ffffff' }
+          });
+        } catch (qrErr) {
+          console.error('Kasera QR code generation error:', qrErr);
+        }
+      }
+
+      const newTopup = {
+        id: orderId,
+        reffId: ksrData.id,
+        userId: user.id,
+        username: user.username,
+        paymentMethod: `Kasera Pay (${kaseraMethod.replace('va_', '').toUpperCase()})`,
+        gateway: 'kasera',
+        gatewayMethod: kaseraMethod,
+        amount: depAmount,
+        totalPay: totalPayment,
+        fee: ksrData.fee || 0,
+        paymentNumber: cleanedPaymentNumber,
+        qrDataUrl: qrDataUrl,
+        payUrl: ksrData.checkout_url || '',
+        instructions: ksrData.instructions || null,
+        expiredAt: ksrData.expires_at || new Date(Date.now() + 30 * 60000).toISOString(),
+        proofUrl: '',
+        notes: notes || 'Otomatis via Kasera Pay Payment Gateway',
+        status: 'Pending',
+        createdAt: new Date().toISOString()
+      };
+
+      db.topups.unshift(newTopup);
+      saveDB(db);
+
+      return res.json({
+        success: true,
+        message: 'Pembayaran Kasera Pay otomatis berhasil dibuat! Silakan bayar sebelum kedaluwarsa.',
+        topup: newTopup,
+        isAutoGateway: true
+      });
+    } catch (err) {
+      console.error('Kasera fetch error:', err);
+      return res.status(500).json({ success: false, message: 'Terjadi gangguan jaringan saat menghubungi gateway Kasera Pay.' });
+    }
+  }
+
   if (paymentId === 'pakasir' || paymentId === 'pakasir-qris' || paymentId === 'pakasir-va') {
     const project = db.settings?.pakasirProject || process.env.PAKASIR_PROJECT;
     const apiKey = db.settings?.pakasirApiKey || process.env.PAKASIR_API_KEY;
@@ -798,6 +938,66 @@ app.get('/api/topup/check-flowix/:topupId', async (req, res) => {
   }
 });
 
+// 8.1.3 Cek Status Pembayaran Kasera Pay (Polling / Manual Check)
+app.get('/api/topup/check-kasera/:topupId', async (req, res) => {
+  const { topupId } = req.params;
+  const db = getDB();
+  const item = (db.topups || []).find(t => t.id === topupId || t.reffId === topupId);
+
+  if (!item) {
+    return res.status(404).json({ success: false, message: 'Data deposit tidak ditemukan.' });
+  }
+
+  if (item.status === 'Approved') {
+    return res.json({ success: true, status: 'Approved', message: 'Pembayaran sudah lunas dan saldo sudah masuk!' });
+  }
+
+  const kaseraApiKey = db.settings?.kaseraApiKey || process.env.KASERA_API_KEY || 'kp_live_6W-buSXtXoHnxeFKEKIbLuzRm-6hT-WQ_V73aC0GKkY';
+  const reffId = item.reffId || item.id;
+
+  try {
+    const response = await fetch(`${KASERA_BASE}/v1/transactions/${encodeURIComponent(reffId)}`, {
+      headers: { 'Authorization': `Bearer ${kaseraApiKey}` }
+    });
+    const ksrData = await response.json().catch(() => null);
+
+    if (ksrData && ksrData.id) {
+      const status = String(ksrData.status || '').toLowerCase();
+
+      if (status === 'succeeded') {
+        item.status = 'Approved';
+        item.approvedAt = new Date().toISOString();
+        const user = db.users.find(u => u.id === item.userId);
+        if (user) {
+          user.balance += item.amount;
+        }
+        saveDB(db);
+
+        return res.json({
+          success: true,
+          status: 'Approved',
+          message: '🎉 Pembayaran Kasera Pay terverifikasi lunas! Saldo berhasil masuk.',
+          newBalance: user ? user.balance : undefined
+        });
+      } else if (status === 'failed' || status === 'expired' || status === 'canceled') {
+        item.status = 'Rejected';
+        item.rejectedAt = new Date().toISOString();
+        saveDB(db);
+        return res.json({ success: false, status: 'Rejected', message: 'Transaksi telah kedaluwarsa atau dibatalkan.' });
+      }
+    }
+
+    return res.json({
+      success: true,
+      status: item.status,
+      message: 'Menunggu pembayaran dari Anda...'
+    });
+  } catch (err) {
+    console.error('Check Kasera error:', err);
+    return res.status(500).json({ success: false, message: 'Gagal memeriksa status ke Kasera Pay.' });
+  }
+});
+
 // 8.3 Webhook Flowix (flowix.web.id callback otomatis)
 app.post(['/webhook/flowix', '/webhooks/flowix'], async (req, res) => {
   const db = getDB();
@@ -969,6 +1169,79 @@ app.post('/webhook/pakasir', async (req, res) => {
   }
 });
 
+// 8.4 Webhook Kasera Pay (pay.kasera.id callback otomatis)
+app.post(['/webhook/kasera', '/webhooks/kasera'], async (req, res) => {
+  const db = getDB();
+  const rawBody = req.rawBody || JSON.stringify(req.body);
+  const secret = db.settings?.kaseraWebhookSecret || process.env.KASERA_WEBHOOK_SECRET || '';
+  const signatureHeader = req.header('Kasera-Signature-V1') || req.header('Kasera-Signature');
+
+  // Verifikasi signature HMAC-SHA256 (t=<unix>,v1=<hex>) jika signing secret dikonfigurasi
+  if (secret && signatureHeader) {
+    try {
+      let t = null;
+      const sigs = [];
+      for (const part of String(signatureHeader).split(',')) {
+        const kv = part.split('=');
+        if (kv.length !== 2) continue;
+        if (kv[0] === 't') t = kv[1];
+        else if (kv[0] === 'v1') sigs.push(kv[1].toLowerCase());
+      }
+      const expected = crypto.createHmac('sha256', secret).update(`${t}.${rawBody}`).digest('hex');
+      const matched = sigs.some(s => {
+        try {
+          return crypto.timingSafeEqual(Buffer.from(s), Buffer.from(expected));
+        } catch (e) { return false; }
+      });
+      if (!matched) {
+        console.warn('⚠️ Kasera webhook signature mismatch!');
+      }
+    } catch (sigErr) {
+      console.error('Kasera signature check error:', sigErr);
+    }
+  }
+
+  const event = req.body || {};
+  const eventType = String(event.type || '').toLowerCase();
+
+  // Hanya proses event payment.paid
+  if (eventType && eventType !== 'payment.paid') {
+    return res.status(200).json({ received: true, ignored: eventType });
+  }
+
+  const data = event.data || {};
+  const externalId = data.external_id;      // ID topup kita (DEP-KSR-...)
+  const payreqId = data.payment_request_id; // payreq_<uuid>
+  const paidAmount = data.amount;
+
+  const localTopup = (db.topups || []).find(t => t.id === externalId || t.reffId === payreqId);
+  if (!localTopup) {
+    return res.status(200).json({ received: true, message: 'Transaksi tidak ditemukan (diabaikan)' });
+  }
+
+  if (localTopup.status === 'Approved') {
+    return res.status(200).json({ received: true, message: 'Already completed' });
+  }
+
+  // Validasi nominal agar tidak ada manipulasi
+  if (paidAmount && Number(paidAmount) !== Number(localTopup.amount)) {
+    console.warn(`⚠️ Kasera amount mismatch untuk ${externalId}: webhook=${paidAmount}, lokal=${localTopup.amount}`);
+    return res.status(200).json({ received: true, message: 'Amount mismatch, perlu verifikasi manual' });
+  }
+
+  localTopup.status = 'Approved';
+  localTopup.approvedAt = new Date().toISOString();
+  localTopup.payreqId = payreqId || localTopup.payreqId;
+  const user = db.users.find(u => u.id === localTopup.userId);
+  if (user) {
+    user.balance += localTopup.amount;
+    console.log(`✅ [KASERA AUTO] Saldo User ${user.username} bertambah Rp ${localTopup.amount.toLocaleString()} (Reff: ${externalId})`);
+  }
+  saveDB(db);
+
+  return res.status(200).json({ received: true, success: true });
+});
+
 // 9. Upload Proof Topup
 app.post('/api/topup/upload-proof', (req, res) => {
   const userId = req.headers['x-user-id'];
@@ -1056,12 +1329,13 @@ app.get('/api/admin/all-data', checkAdmin, (req, res) => {
   });
 });
 
-// Admin Save Settings (Domain Panel, Contact, Site Info, Pakasir API, Flowix API, Broadcast Text)
+// Admin Save Settings (Domain Panel, Contact, Site Info, Pakasir API, Flowix API, Kasera API, Broadcast Text)
 app.post('/api/admin/settings/save', checkAdmin, (req, res) => {
   const {
     siteName, siteTagline, pteroDomain, pteroApiKey, contactWa, announcementText,
     pakasirProject, pakasirApiKey, pakasirAutoActive,
-    flowixApiKey, flowixMerchantId, flowixWebhookSecret, flowixAutoActive
+    flowixApiKey, flowixMerchantId, flowixWebhookSecret, flowixAutoActive,
+    kaseraApiKey, kaseraWebhookSecret, kaseraAutoActive
   } = req.body;
   const db = getDB();
 
@@ -1079,11 +1353,14 @@ app.post('/api/admin/settings/save', checkAdmin, (req, res) => {
     flowixApiKey: flowixApiKey !== undefined ? flowixApiKey.trim() : (db.settings.flowixApiKey || ''),
     flowixMerchantId: flowixMerchantId !== undefined ? flowixMerchantId.trim() : (db.settings.flowixMerchantId || ''),
     flowixWebhookSecret: flowixWebhookSecret !== undefined ? flowixWebhookSecret.trim() : (db.settings.flowixWebhookSecret || ''),
-    flowixAutoActive: flowixAutoActive !== undefined ? !!flowixAutoActive : (db.settings.flowixAutoActive ?? true)
+    flowixAutoActive: flowixAutoActive !== undefined ? !!flowixAutoActive : (db.settings.flowixAutoActive ?? true),
+    kaseraApiKey: kaseraApiKey !== undefined ? kaseraApiKey.trim() : (db.settings.kaseraApiKey || ''),
+    kaseraWebhookSecret: kaseraWebhookSecret !== undefined ? kaseraWebhookSecret.trim() : (db.settings.kaseraWebhookSecret || ''),
+    kaseraAutoActive: kaseraAutoActive !== undefined ? !!kaseraAutoActive : (db.settings.kaseraAutoActive ?? true)
   };
 
   saveDB(db);
-  return res.json({ success: true, message: 'Pengaturan website, panel, Pakasir & Flowix Gateway berhasil disimpan!', settings: db.settings });
+  return res.json({ success: true, message: 'Pengaturan website, panel, Pakasir, Flowix & Kasera Gateway berhasil disimpan!', settings: db.settings });
 });
 
 // Admin Approve / Reject Topup

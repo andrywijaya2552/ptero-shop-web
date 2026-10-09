@@ -463,6 +463,9 @@ function populatePaymentSelect() {
   // Pilihan Otomatis Flowix (flowix.web.id)
   options.push(`<option value="flowix" class="text-blue-400 font-bold">⚡ Flowix Gateway Otomatis (QRIS & Virtual Account)</option>`);
 
+  // Pilihan Otomatis Kasera Pay (pay.kasera.id)
+  options.push(`<option value="kasera" class="text-purple-400 font-bold">⚡ Kasera Pay Gateway Otomatis (QRIS & Virtual Account)</option>`);
+
   // Pilihan Transfer Manual yang sudah ada
   currentPayments.forEach(p => {
     options.push(`<option value="${p.id}">${p.name} (Manual)</option>`);
@@ -476,26 +479,33 @@ function handlePaymentChange() {
   const selId = document.getElementById('topupPaymentSelect').value;
   const pakasirSub = document.getElementById('pakasirSubOptions');
   const flowixSub = document.getElementById('flowixSubOptions');
+  const kaseraSub = document.getElementById('kaseraSubOptions');
   const payInfoBox = document.getElementById('paymentInstructionBox');
   const qrContainer = document.getElementById('payQrContainer');
   const qrImg = document.getElementById('payQrImg');
 
+  if (pakasirSub) pakasirSub.classList.add('hidden');
+  if (flowixSub) flowixSub.classList.add('hidden');
+  if (kaseraSub) kaseraSub.classList.add('hidden');
+
   if (selId === 'pakasir') {
     if (pakasirSub) pakasirSub.classList.remove('hidden');
-    if (flowixSub) flowixSub.classList.add('hidden');
     if (payInfoBox) payInfoBox.classList.add('hidden');
     return;
   }
 
   if (selId === 'flowix') {
     if (flowixSub) flowixSub.classList.remove('hidden');
-    if (pakasirSub) pakasirSub.classList.add('hidden');
     if (payInfoBox) payInfoBox.classList.add('hidden');
     return;
   }
 
-  if (pakasirSub) pakasirSub.classList.add('hidden');
-  if (flowixSub) flowixSub.classList.add('hidden');
+  if (selId === 'kasera') {
+    if (kaseraSub) kaseraSub.classList.remove('hidden');
+    if (payInfoBox) payInfoBox.classList.add('hidden');
+    return;
+  }
+
   if (payInfoBox) payInfoBox.classList.remove('hidden');
 
   const p = currentPayments.find(item => item.id === selId);
@@ -535,6 +545,9 @@ async function handleRequestTopup(e) {
   } else if (paymentId === 'flowix') {
     const checkedRadio = document.querySelector('input[name="flowixChannel"]:checked');
     if (checkedRadio) method = checkedRadio.value;
+  } else if (paymentId === 'kasera') {
+    const checkedRadio = document.querySelector('input[name="kaseraChannel"]:checked');
+    if (checkedRadio) method = checkedRadio.value;
   }
 
   try {
@@ -569,19 +582,21 @@ function openPakasirPaymentModal(topup) {
   currentPakasirOrder = topup;
   document.getElementById('pksOrderId').innerText = topup.id;
   document.getElementById('pksTotalPay').innerText = formatRupiah(topup.totalPay);
-  document.getElementById('pksMethodBadge').innerText = topup.gatewayMethod ? topup.gatewayMethod.toUpperCase() : 'QRIS';
-  document.getElementById('pksDirectPayLink').href = topup.paymentUrl || '#';
+  document.getElementById('pksMethodBadge').innerText = topup.gatewayMethod ? topup.gatewayMethod.replace('va_', '').toUpperCase() : 'QRIS';
+  document.getElementById('pksDirectPayLink').href = topup.payUrl || topup.paymentUrl || '#';
   document.getElementById('pksLiveStatus').innerText = 'Menunggu Pembayaran...';
   document.getElementById('pksLiveStatus').className = 'font-bold text-amber-400';
 
   const qrBox = document.getElementById('pksQrBox');
   const vaBox = document.getElementById('pksVaBox');
+  const gm = (topup.gatewayMethod || '').toLowerCase();
+  const isVa = gm.startsWith('va_') || gm === 'bni_va' || gm === 'bri_va' || gm === 'bcava' || gm === 'mandiriva';
 
-  if (topup.gatewayMethod === 'bni_va' || topup.gatewayMethod === 'bri_va') {
+  if (isVa) {
     qrBox.classList.add('hidden');
     vaBox.classList.remove('hidden');
     document.getElementById('pksVaNumber').innerText = topup.paymentNumber || '-';
-    document.getElementById('pakasirModalSubtitle').innerText = `Silakan transfer ke nomor Virtual Account ${topup.gatewayMethod.toUpperCase()} di bawah`;
+    document.getElementById('pakasirModalSubtitle').innerText = `Silakan transfer ke nomor Virtual Account ${gm.replace('va_', '').toUpperCase()} di bawah`;
   } else {
     // QRIS
     qrBox.classList.remove('hidden');
@@ -617,8 +632,14 @@ function openPakasirPaymentModal(topup) {
 
 async function checkPakasirStatus(topupId, isManualAlert = false) {
   try {
-    const isFlowix = topupId.startsWith('DEP-FLX');
-    const endpoint = isFlowix ? `/api/topup/check-flowix/${topupId}` : `/api/topup/check-pakasir/${topupId}`;
+    let endpoint;
+    if (topupId.startsWith('DEP-FLX')) {
+      endpoint = `/api/topup/check-flowix/${topupId}`;
+    } else if (topupId.startsWith('DEP-KSR')) {
+      endpoint = `/api/topup/check-kasera/${topupId}`;
+    } else {
+      endpoint = `/api/topup/check-pakasir/${topupId}`;
+    }
     const res = await fetch(endpoint);
     const data = await res.json();
 
@@ -670,12 +691,13 @@ async function loadUserTopups() {
       }
 
       container.innerHTML = data.topups.map(t => {
-        const isPakasir = t.gateway === 'pakasir';
+        const isAuto = t.gateway && t.gateway !== 'manual';
+        const gwLabel = t.gateway === 'pakasir' ? 'Pakasir' : (t.gateway === 'flowix' ? 'Flowix' : (t.gateway === 'kasera' ? 'Kasera' : ''));
         return `
           <div class="p-3.5 rounded-xl bg-gray-900 border border-gray-800 text-xs space-y-2">
             <div class="flex justify-between items-center">
               <span class="font-mono font-bold text-cyan-300 flex items-center gap-1">
-                ${isPakasir ? '<i class="ri-flashlight-fill text-emerald-400"></i>' : ''} ${t.id}
+                ${isAuto ? '<i class="ri-flashlight-fill text-emerald-400"></i>' : ''} ${t.id}
               </span>
               <span class="px-2 py-0.5 rounded-full font-bold text-[10px] ${t.status === 'Approved' ? 'bg-emerald-500/20 text-emerald-400' : (t.status === 'Rejected' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400')}">${t.status}</span>
             </div>
@@ -684,10 +706,10 @@ async function loadUserTopups() {
               <span class="font-bold text-white">Nominal: ${formatRupiah(t.amount)}</span>
             </div>
             <div class="flex justify-between items-center bg-gray-950 p-2 rounded-lg border border-gray-800">
-              <span class="text-gray-400 text-[11px]">${isPakasir ? 'Total Bayar (Pakasir):' : 'Total Ditransfer (Kode Unik):'}</span>
+              <span class="text-gray-400 text-[11px]">${isAuto ? `Total Bayar (${gwLabel}):` : 'Total Ditransfer (Kode Unik):'}</span>
               <span class="font-mono font-black text-emerald-400 text-sm">${formatRupiah(t.totalPay)}</span>
             </div>
-            ${isPakasir && t.status === 'Pending' ? `
+            ${isAuto && t.status === 'Pending' ? `
               <div class="flex gap-2 pt-1">
                 <button onclick='openPakasirPaymentModal(${JSON.stringify(t)})' class="flex-1 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black font-bold rounded-lg text-[11px] flex items-center justify-center gap-1 transition">
                   <i class="ri-qr-code-line"></i> Buka Pembayaran
@@ -766,6 +788,15 @@ async function loadAdminData() {
         }
         if (document.getElementById('displayFlowixWebhookUrl')) {
           document.getElementById('displayFlowixWebhookUrl').innerText = `${window.location.origin}/webhook/flowix`;
+        }
+        if (document.getElementById('settingKaseraApiKey')) {
+          document.getElementById('settingKaseraApiKey').value = data.settings.kaseraApiKey || '';
+        }
+        if (document.getElementById('settingKaseraWebhookSecret')) {
+          document.getElementById('settingKaseraWebhookSecret').value = data.settings.kaseraWebhookSecret || '';
+        }
+        if (document.getElementById('displayKaseraWebhookUrl')) {
+          document.getElementById('displayKaseraWebhookUrl').innerText = `${window.location.origin}/webhook/kasera`;
         }
       }
 
@@ -1021,6 +1052,8 @@ async function handleSaveSettings(e) {
   const pakasirApiKey = document.getElementById('settingPakasirApiKey') ? document.getElementById('settingPakasirApiKey').value.trim() : '';
   const flowixApiKey = document.getElementById('settingFlowixApiKey') ? document.getElementById('settingFlowixApiKey').value.trim() : '';
   const flowixMerchantId = document.getElementById('settingFlowixMerchantId') ? document.getElementById('settingFlowixMerchantId').value.trim() : '';
+  const kaseraApiKey = document.getElementById('settingKaseraApiKey') ? document.getElementById('settingKaseraApiKey').value.trim() : '';
+  const kaseraWebhookSecret = document.getElementById('settingKaseraWebhookSecret') ? document.getElementById('settingKaseraWebhookSecret').value.trim() : '';
 
   try {
     const res = await fetch('/api/admin/settings/save', {
@@ -1039,7 +1072,9 @@ async function handleSaveSettings(e) {
         pakasirProject,
         pakasirApiKey,
         flowixApiKey,
-        flowixMerchantId
+        flowixMerchantId,
+        kaseraApiKey,
+        kaseraWebhookSecret
       })
     });
     const data = await res.json();

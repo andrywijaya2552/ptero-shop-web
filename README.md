@@ -1,13 +1,14 @@
 # Ptero Store & Cloud Hosting Web Application
 
-Website Toko Jual Panel Pterodactyl & Cloud Hosting dengan Sistem Saldo Otomatis, Multi-Payment Gateway (Pakasir & Flowix), Auto Credentials Generator, Live Chat Support, Running Broadcast, dan Panel Admin Lengkap.
+Website Toko Jual Panel Pterodactyl & Cloud Hosting dengan Sistem Saldo Otomatis, Multi-Payment Gateway (Pakasir, Flowix & Kasera Pay), Auto Credentials Generator, Live Chat Support, Running Broadcast, dan Panel Admin Lengkap.
 
 ---
 
-## 🚀 Fitur Unggulan Terbaru (v2.0.2)
+## 🚀 Fitur Unggulan Terbaru (v2.1.0)
 1. **Multi-Payment Gateway Otomatis**:
    - **Pakasir Payment Gateway** (QRIS & Virtual Account BNI / BRI).
    - **Flowix Payment Gateway** (QRIS & Virtual Account BCA / Mandiri).
+   - **Kasera Pay Payment Gateway** (QRIS & Virtual Account BRI / BNI / Mandiri / Permata / CIMB, dengan verifikasi signature webhook `Kasera-Signature-V1`).
    - **Metode Transfer Manual** (QRIS All Payment, DANA, GoPay, Bank BCA).
 2. **Standard EMVCo QRIS Generator**:
    - Render QRIS tajam, presisi, dan resolusi tinggi (bebas error scan dari semua E-Wallet & M-Banking).
@@ -46,7 +47,15 @@ Website Toko Jual Panel Pterodactyl & Cloud Hosting dengan Sistem Saldo Otomatis
      FLOWIX_API_KEY=sk-d2e1f23c-817d343e328c-a8fe474da8a3
      FLOWIX_MERCHANT_ID=MID-TAT2676
      FLOWIX_WEBHOOK_SECRET=whsec_bbe2272d8fe61101125903d59f7061c
+
+     # Payment Gateway Kasera Pay (https://pay.kasera.id)
+     KASERA_API_KEY=kp_live_xxxxxxxx
+     KASERA_WEBHOOK_SECRET=whsec_xxxxxxxx
      ```
+   - Daftarkan **Webhook URL** berikut di dashboard masing-masing gateway:
+     - Pakasir: `https://domain-anda.com/webhook/pakasir`
+     - Flowix: `https://domain-anda.com/webhook/flowix`
+     - Kasera Pay: `https://domain-anda.com/webhook/kasera`
 
 3. **Install Dependencies**:
    - Di tab **Console** Pterodactyl, jalankan perintah:
